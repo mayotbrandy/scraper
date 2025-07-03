@@ -147,16 +147,91 @@ def troubleshoot_dnb_playwright():
                     browser = p.firefox.launch_persistent_context(
                         user_data_dir=context_dir,
                         headless=True,
+                        user_agent=random.choice([
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0",
+                            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/115.0",
+                            "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
+                        ]),
+                        viewport={"width": random.randint(1300, 1920), "height": random.randint(768, 1080)},
+                        bypass_csp=True,
+                        java_script_enabled=True,
+                        accept_downloads=False,
+                        locale=random.choice(["en-US,en;q=0.9", "en-GB,en;q=0.9", "fr-FR,fr;q=0.9"]),
                     )
                     context = browser
                     context.set_default_timeout(60000)
-                    page = context.new_page()
 
-                    # Enhanced context configuration
-                    context = browser
-                    context.add_init_script(
-                        path="stealth.js"  # External stealth script (defined below)
-                    )
+                    # Embed stealth script directly
+                    context.add_init_script("""
+                        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                        Object.defineProperty(window, 'chrome', { get: () => undefined });
+                        Object.defineProperty(navigator, 'plugins', {
+                            get: () => [
+                                { name: 'PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 1 },
+                                { name: 'Widevine Content Decryption Module', filename: 'widevinecdm.dll', description: 'Enables secure playback', length: 1 },
+                            ],
+                        });
+                        Object.defineProperty(navigator, 'mimeTypes', {
+                            get: () => [
+                                { type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format', enabledPlugin: navigator.plugins[0] },
+                            ],
+                        });
+                        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+                        Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => [4, 8, 12][Math.floor(Math.random() * 3)] });
+                        Object.defineProperty(navigator, 'deviceMemory', { get: () => [4, 8, 16][Math.floor(Math.random() * 3)] });
+                        Object.defineProperty(window, 'outerWidth', { get: () => window.innerWidth });
+                        Object.defineProperty(window, 'outerHeight', { get: () => window.innerHeight });
+                        console.debug = () => {};
+
+                        // Enhanced WebGL spoofing
+                        const getParameter = WebGLRenderingContext.prototype.getParameter;
+                        WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                            if (parameter === 37445) return 'Mozilla';
+                            if (parameter === 37446) {
+                                const renderers = ['ANGLE (NVIDIA GeForce RTX 3060)', 'ANGLE (Intel Iris Xe)', 'ANGLE (AMD Radeon)'];
+                                return renderers[Math.floor(Math.random() * renderers.length)];
+                            }
+                            return getParameter.apply(this, arguments);
+                        };
+
+                        // Spoof canvas fingerprint
+                        const getContext = HTMLCanvasElement.prototype.getContext;
+                        HTMLCanvasElement.prototype.getContext = function(type) {
+                            if (type === '2d') {
+                                const ctx = getContext.apply(this, arguments);
+                                const originalGetImageData = ctx.getImageData;
+                                ctx.getImageData = function(x, y, w, h) {
+                                    const data = originalGetImageData.apply(this, arguments);
+                                    const pixels = data.data;
+                                    for (let i = 0; i < pixels.length; i += 4) {
+                                        pixels[i] += Math.floor(Math.random() * 2); // Slight noise
+                                    }
+                                    return data;
+                                };
+                                return ctx;
+                            }
+                            return getContext.apply(this, arguments);
+                        };
+
+                        // Spoof navigator.connection
+                        Object.defineProperty(navigator, 'connection', {
+                            get: () => ({
+                                effectiveType: '4g',
+                                rtt: Math.floor(Math.random() * 100) + 50,
+                                downlink: Math.random() * 5 + 5,
+                                saveData: false,
+                            }),
+                        });
+
+                        // Spoof Permissions.query
+                        const originalQuery = Permissions.prototype.query;
+                        Permissions.prototype.query = async function(permissionDesc) {
+                            if (permissionDesc.name === 'notifications') return { state: 'denied' };
+                            if (['geolocation', 'midi', 'camera', 'microphone'].includes(permissionDesc.name)) return { state: 'granted' };
+                            return originalQuery.call(this, permissionDesc);
+                        };
+                    """)
+
                     context.set_extra_http_headers({
                         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                         'Accept-Encoding': 'gzip, deflate, br',
@@ -164,7 +239,8 @@ def troubleshoot_dnb_playwright():
                         'Upgrade-Insecure-Requests': '1',
                     })
 
-                    log_message("Playwright browser launched with persistent context and enhanced stealth.", f_results)
+                    page = context.new_page()
+                    log_message("Playwright browser launched with persistent context and embedded stealth.", f_results)
 
                     # Longer random delay before DNB Home
                     delay_before_dnb_home = random.uniform(10, 25)
