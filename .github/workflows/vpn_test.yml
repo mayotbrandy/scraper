@@ -1,0 +1,41 @@
+name: VPN Connectivity Test
+
+on:
+  # Allows you to run this workflow manually from the Actions tab in GitHub
+  workflow_dispatch:
+
+jobs:
+  test-vpn-connections:
+    runs-on: ubuntu-latest # GitHub-hosted runner with Ubuntu
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install WireGuard tools and resolvconf
+        # WireGuard tools (wg-quick) and resolvconf (for DNS management) are essential.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wireguard-tools resolvconf
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x' # Use the latest Python 3 version available
+
+      - name: Install Python dependencies
+        run: |
+          pip install requests
+
+      - name: Run VPN connectivity test script
+        # The Python script will handle calling wg-quick with sudo
+        run: |
+          python vpn_test_script.py
+
+      - name: Upload VPN test results
+        # This step uploads the results file as a workflow artifact,
+        # which you can download from the GitHub Actions run summary page.
+        uses: actions/upload-artifact@v4
+        with:
+          name: vpn-test-results
+          path: vpn_test_results.txt
