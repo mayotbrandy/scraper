@@ -13,7 +13,7 @@ from datetime import datetime
 # Import SeleniumBase components
 from seleniumbase import Driver
 from selenium.webdriver.common.by import By
-from selenium.common.exceptions import WebDriverException, TimeoutException
+from selenium.common.exceptions import WebDriverException, TimeoutException, SessionNotCreatedException
 
 class DNBScraperSelenium:
     def __init__(self):
@@ -175,15 +175,27 @@ class DNBScraperSelenium:
 
     def initialize_driver(self):
         """Initializes the SeleniumBase WebDriver."""
-        # SeleniumBase Driver will automatically use the system's network configuration,
-        # which will be routed through the active WireGuard VPN.
+        # FIX: Changed "chromium" to "chrome" as per SeleniumBase valid options
         try:
-            self.driver = Driver(browser="chromium", headless=True) # Use chromium for GitHub Actions
+            self.driver = Driver(browser="chrome", headless=True) # Use "chrome" for Chromium
             self.driver.set_page_load_timeout(60) # Set page load timeout to 60 seconds
-            self.log("Selenium WebDriver initialized in headless mode.")
-        except Exception as e:
-            self.log(f"Error initializing Selenium WebDriver: {e}")
+            self.log("Selenium WebDriver initialized successfully in headless mode!")
+            return True
+        except SessionNotCreatedException as e:
+            self.log(f"SessionNotCreatedException during WebDriver initialization: {e}")
+            self.log("This often means the browser executable could not be started or found, or there's a compatibility issue with the WebDriver.")
+            self.log("Possible causes: Missing browser, incorrect browser path, incompatible browser/driver version, or missing display server.")
             self.driver = None
+            return False
+        except WebDriverException as e:
+            self.log(f"WebDriverException during WebDriver initialization: {e}")
+            self.log("This is a general WebDriver error. Ensure all browser dependencies are installed (e.g., fonts, libraries).")
+            self.driver = None
+            return False
+        except Exception as e:
+            self.log(f"An unexpected error occurred during WebDriver initialization: {e}")
+            self.driver = None
+            return False
 
     def quit_driver(self):
         """Quits the Selenium WebDriver."""
@@ -286,8 +298,7 @@ class DNBScraperSelenium:
                     continue
 
                 # Initialize driver *after* VPN is up so it uses the VPN tunnel
-                self.initialize_driver()
-                if not self.driver:
+                if not self.initialize_driver(): # Check if driver initialization was successful
                     self.log(f"Could not initialize browser for {config_file}. Skipping this config.")
                     f_results.write(f"  Browser Initialization Failed. Skipping this config.\n\n")
                     self.bring_down_vpn() # Attempt to bring down VPN even if browser failed
