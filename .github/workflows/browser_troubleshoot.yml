@@ -1,11 +1,11 @@
-name: SeleniumBase Browser Troubleshooting
+name: DNB Scraper Troubleshooting
 
 on:
   # Allows you to run this workflow manually from the Actions tab in GitHub
   workflow_dispatch:
 
 jobs:
-  troubleshoot-browser:
+  troubleshoot-scraper:
     runs-on: ubuntu-latest # GitHub-hosted runner with Ubuntu
 
     steps:
@@ -14,7 +14,6 @@ jobs:
 
       - name: Install Chromium Browser
         # SeleniumBase needs a browser. Chromium is a good choice for headless environments.
-        # This command installs the snap version of Chromium which is common on Ubuntu.
         run: |
           sudo apt-get update
           sudo apt-get install -y chromium-browser
@@ -26,16 +25,21 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          pip install seleniumbase requests # requests is included for general utility, though not strictly needed by this specific troubleshoot script
+          pip install seleniumbase beautifulsoup4 requests # requests is included for general utility
 
-      - name: Run Browser Troubleshooting Script
+      - name: Run DNB Scraper Troubleshooting Script
         run: |
-          python browser_troubleshoot.py
+          python dnb_scraper_troubleshoot.py
 
       - name: Upload Troubleshooting Results
-        # This step uploads the results file as a workflow artifact,
-        # which you can download from the GitHub Actions run summary page.
         uses: actions/upload-artifact@v4
         with:
-          name: browser-troubleshoot-results
-          path: browser_troubleshoot_results.txt
+          name: dnb-troubleshoot-results
+          path: dnb_troubleshoot_results.txt
+
+      - name: Upload Screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: dnb-troubleshoot-screenshots
+          path: troubleshoot_screenshots/
+          if-no-files-found: ignore # Don't fail if no screenshots are found
