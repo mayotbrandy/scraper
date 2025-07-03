@@ -7,7 +7,7 @@ import dns.resolver
 import os
 import subprocess
 import random
-import socket # Although not directly used for proxying in this version, kept for potential future use or debugging
+import socket
 from datetime import datetime
 
 # Import SeleniumBase components
@@ -43,6 +43,10 @@ class DNBScraperSelenium:
         ]
         self.results_file = "scraper_results.txt"
         self.vpn_setup_wait_time = 5 # seconds to wait after bringing up VPN
+        self.screenshot_dir = "screenshots" # Directory to save screenshots
+
+        # Ensure screenshot directory exists
+        os.makedirs(self.screenshot_dir, exist_ok=True)
 
     def log(self, message, task_time=None):
         """Logs messages with an elapsed time prefix."""
@@ -204,13 +208,27 @@ class DNBScraperSelenium:
             self.driver = None
             self.log("Selenium WebDriver quit.")
 
-    def scrape_company_websites(self, url):
+    def take_screenshot(self, filename_suffix):
+        """Takes a screenshot and saves it to the screenshots directory."""
+        if self.driver:
+            screenshot_name = f"{self.current_vpn_config_file.replace('.conf', '')}_{filename_suffix}_{datetime.now().strftime('%H%M%S')}.png"
+            screenshot_path = os.path.join(self.screenshot_dir, screenshot_name)
+            try:
+                self.driver.save_screenshot(screenshot_path)
+                self.log(f"Screenshot saved: {screenshot_path}")
+            except Exception as e:
+                self.log(f"Error taking screenshot {screenshot_name}: {e}")
+
+    def scrape_company_websites(self, url, page_number):
         """Scrapes company websites from a given D&B page using SeleniumBase."""
         websites = []
         try:
             start_task = time.time()
             self.log(f"Navigating to D&B page: {url}")
             self.driver.get(url) # Navigate using SeleniumBase
+            
+            # Take a screenshot after navigating to the page
+            self.take_screenshot(f"page_{page_number}")
 
             # Get page source after navigation
             content = self.driver.page_source
@@ -220,6 +238,9 @@ class DNBScraperSelenium:
             company_links = soup.find_all('a', href=lambda x: x and '/business-directory/company-profiles.' in x)
             self.log(f"Found {len(company_links)} company profile links on this page", time.time() - start_task)
 
+            if not company_links:
+                self.log(f"No company links found on {url}. Page source snippet:\n{content[:1000]}...") # Log snippet if no links
+            
             for idx, link in enumerate(company_links, 1):
                 link_start = time.time()
                 company_page_url = urljoin(url, link['href'])
@@ -245,7 +266,12 @@ class DNBScraperSelenium:
         """Extracts the main website URL from a company profile page using SeleniumBase."""
         try:
             start_time = time.time()
+            self.log(f"Navigating to company detail page: {company_page_url}")
             self.driver.get(company_page_url) # Navigate using SeleniumBase
+            
+            # Take a screenshot of the company detail page
+            self.take_screenshot(f"company_{os.path.basename(company_page_url).split('.')[0]}")
+
             content = self.driver.page_source
             soup = BeautifulSoup(content, 'html.parser')
 
@@ -257,6 +283,8 @@ class DNBScraperSelenium:
                 clean_url = self.clean_url(raw_url)
                 self.log(f"Retrieved and cleaned website URL: {clean_url}", time.time() - start_time)
                 result = clean_url
+            else:
+                self.log(f"Website element (id='hero-company-link') not found on {company_page_url}. Page source snippet:\n{content[:1000]}...")
             return result
         except TimeoutException:
             self.log(f"Navigation to {company_page_url} timed out.")
@@ -307,7 +335,10 @@ class DNBScraperSelenium:
                 try:
                     # Test current IP through the VPN using Selenium to confirm connectivity
                     self.driver.get("https://ifconfig.me/ip")
-                    current_ip = self.driver.page_source.strip()
+                    # FIX: Parse the IP from the HTML response
+                    ip_soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+                    current_ip = ip_soup.find('pre').text.strip() if ip_soup.find('pre') else "IP not found in <pre> tag"
+                    
                     self.log(f"Current Public IP through VPN: {current_ip}")
                     f_results.write(f"  Public IP through VPN: {current_ip}\n")
 
@@ -325,7 +356,7 @@ class DNBScraperSelenium:
                             current_url = self.get_paginated_url(base_url, page_number)
                             self.log(f"Scraping page {page_number}/{MAX_PAGES}: {current_url}")
                             
-                            websites = self.scrape_company_websites(current_url)
+                            websites = self.scrape_company_websites(current_url, page_number) # Pass page_number for screenshot naming
 
                             if websites:
                                 # If this page has data but we skipped some pages, go back and retry
