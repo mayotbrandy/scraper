@@ -1,4 +1,4 @@
-name: Playwright DNB Scraper Troubleshooting
+name: Playwright DNB Scraper Troubleshooting (Real User-like)
 
 on:
   # Allows you to run this workflow manually from the Actions tab in GitHub
