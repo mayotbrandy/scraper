@@ -1,0 +1,67 @@
+Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+Object.defineProperty(window, 'chrome', { get: () => undefined });
+Object.defineProperty(navigator, 'plugins', {
+    get: () => [
+        { name: 'PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 1 },
+        { name: 'Widevine Content Decryption Module', filename: 'widevinecdm.dll', description: 'Enables secure playback', length: 1 },
+    ],
+});
+Object.defineProperty(navigator, 'mimeTypes', {
+    get: () => [
+        { type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format', enabledPlugin: navigator.plugins[0] },
+    ],
+});
+Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => [4, 8, 12][Math.floor(Math.random() * 3)] });
+Object.defineProperty(navigator, 'deviceMemory', { get: () => [4, 8, 16][Math.floor(Math.random() * 3)] });
+Object.defineProperty(window, 'outerWidth', { get: () => window.innerWidth });
+Object.defineProperty(window, 'outerHeight', { get: () => window.innerHeight });
+console.debug = () => {};
+
+// Enhanced WebGL spoofing
+const getParameter = WebGLRenderingContext.prototype.getParameter;
+WebGLRenderingContext.prototype.getParameter = function(parameter) {
+    if (parameter === 37445) return 'Mozilla';
+    if (parameter === 37446) {
+        const renderers = ['ANGLE (NVIDIA GeForce RTX 3060)', 'ANGLE (Intel Iris Xe)', 'ANGLE (AMD Radeon)'];
+        return renderers[Math.floor(Math.random() * renderers.length)];
+    }
+    return getParameter.apply(this, arguments);
+};
+
+// Spoof canvas fingerprint
+const getContext = HTMLCanvasElement.prototype.getContext;
+HTMLCanvasElement.prototype.getContext = function(type) {
+    if (type === '2d') {
+        const ctx = getContext.apply(this, arguments);
+        const originalGetImageData = ctx.getImageData;
+        ctx.getImageData = function(x, y, w, h) {
+            const data = originalGetImageData.apply(this, arguments);
+            const pixels = data.data;
+            for (let i = 0; i < pixels.length; i += 4) {
+                pixels[i] += Math.floor(Math.random() * 2); // Slight noise
+            }
+            return data;
+        };
+        return ctx;
+    }
+    return getContext.apply(this, arguments);
+};
+
+// Spoof navigator.connection
+Object.defineProperty(navigator, 'connection', {
+    get: () => ({
+        effectiveType: '4g',
+        rtt: Math.floor(Math.random() * 100) + 50,
+        downlink: Math.random() * 5 + 5,
+        saveData: false,
+    }),
+});
+
+// Spoof Permissions.query
+const originalQuery = Permissions.prototype.query;
+Permissions.prototype.query = async function(permissionDesc) {
+    if (permissionDesc.name === 'notifications') return { state: 'denied' };
+    if (['geolocation', 'midi', 'camera', 'microphone'].includes(permissionDesc.name)) return { state: 'granted' };
+    return originalQuery.call(this, permissionDesc);
+};
