@@ -1,4 +1,4 @@
-name: Playwright DNB Scraper Troubleshooting (Comprehensive Stealth - Firefox)
+name: Playwright DNB Scraper Troubleshooting (Finalized - Firefox)
 
 on:
   # Allows you to run this workflow manually from the Actions tab in GitHub
@@ -29,7 +29,7 @@ jobs:
       - name: Install Playwright browsers
         # This step is crucial for Playwright to have the browser binaries
         run: |
-          playwright install firefox # Changed from chromium to firefox
+          playwright install firefox
 
       - name: Run DNB Scraper Troubleshooting Script
         run: |
@@ -46,4 +46,11 @@ jobs:
         with:
           name: dnb-playwright-troubleshoot-screenshots
           path: playwright_troubleshoot_screenshots/
-          if-no-files-found: ignore # Don't fail if no screenshots are found
+          if-no-files-found: ignore
+
+      - name: Upload HTML Dumps
+        uses: actions/upload-artifact@v4
+        with:
+          name: dnb-playwright-troubleshoot-html-dumps
+          path: playwright_troubleshoot_html_dumps/
+          if-no-files-found: ignore
