@@ -12,17 +12,11 @@ RESULTS_FILE = "dnb_playwright_troubleshoot_results.txt"
 SCREENSHOT_DIR = "playwright_troubleshoot_screenshots"
 HTML_DUMP_DIR = "playwright_troubleshoot_html_dumps"
 
-# List of all 9 WireGuard config files to test (corrected based on your repo)
+# Reduced to 3 WireGuard config files for faster runtime
 WIREGUARD_CONFIG_FILES_TO_TEST = [
-    "ch-zrh-wg-001.conf",
-    "ch-zrh-wg-004.conf",
-    "ch-zrh-wg-404.conf",
-    "us-phx-wg-101.conf",
-    "us-phx-wg-103.conf",
-    "us-phx-wg-202.conf",
-    "us-sjc-wg-002.conf",
-    "us-sjc-wg-302.conf",
-    "us-sjc-wg-504.conf",
+    "ch-zrh-wg-001.conf",  # Switzerland
+    "us-phx-wg-101.conf",  # US Phoenix
+    "us-sjc-wg-002.conf",  # US San Jose
 ]
 
 # Ensure directories exist
@@ -60,19 +54,17 @@ def dump_html_content(page, filename_prefix, config_file_name, file_handle):
     except Exception as e:
         log_message(f"Error dumping HTML content {html_dump_name}: {e}", file_handle)
 
-
 def bring_up_vpn(config_file, file_handle):
     """Brings up a WireGuard VPN tunnel using wg-quick."""
     config_path = os.path.join(os.getcwd(), config_file)
     log_message(f"Attempting to bring up WireGuard tunnel with '{config_file}'...", file_handle)
     up_command = ['sudo', 'wg-quick', 'up', config_path]
     up_process = subprocess.run(up_command, capture_output=True, text=True, check=False)
-
     if up_process.returncode != 0:
         log_message(f"Error bringing up VPN: {up_process.stderr.strip()}", file_handle)
         return False
     log_message(f"VPN tunnel for '{config_file}' brought up successfully. Waiting 5 seconds for tunnel to stabilize...", file_handle)
-    time.sleep(5) # Give VPN time to establish
+    time.sleep(5)
     return True
 
 def bring_down_vpn(config_file, file_handle):
@@ -81,14 +73,13 @@ def bring_down_vpn(config_file, file_handle):
     log_message(f"Attempting to bring down WireGuard tunnel for '{config_file}'...", file_handle)
     down_command = ['sudo', 'wg-quick', 'down', config_path]
     down_process = subprocess.run(down_command, capture_output=True, text=True, check=False)
-
     if down_process.returncode != 0:
         log_message(f"Error bringing down VPN: {down_process.stderr.strip()}", file_handle)
     else:
         log_message(f"VPN tunnel for '{config_file}' brought down successfully.", file_handle)
 
-def simulate_human_mouse_movement(page, steps=5, delay_ms=50):
-    """Simulates a few human-like mouse movements."""
+def simulate_human_mouse_movement(page, steps=7, delay_ms_range=(50, 150)):
+    """Simulates human-like mouse movements with variable delays."""
     log_message(f"Simulating human-like mouse movements ({steps} steps)...")
     try:
         current_x = random.randint(100, 500)
@@ -97,31 +88,45 @@ def simulate_human_mouse_movement(page, steps=5, delay_ms=50):
         for _ in range(steps):
             target_x = random.randint(50, 1000)
             target_y = random.randint(50, 800)
-            page.mouse.move(target_x, target_y, steps=random.randint(5, 15))
-            time.sleep(delay_ms / 1000) # Convert ms to seconds
-        # Perform a random click
-        click_x = random.randint(50, 1000)
-        click_y = random.randint(50, 800)
-        page.mouse.click(click_x, click_y)
-        log_message("Mouse movements and click simulated.")
+            page.mouse.move(target_x, target_y, steps=random.randint(5, 20))
+            time.sleep(random.uniform(*delay_ms_range) / 1000)
+        if random.random() < 0.5:  # 50% chance of a click
+            click_x = random.randint(50, 1000)
+            click_y = random.randint(50, 800)
+            page.mouse.click(click_x, click_y)
+            log_message("Mouse click simulated.")
+        log_message("Mouse movements completed.")
     except Exception as e:
         log_message(f"Error simulating mouse movement: {e}")
 
-def simulate_human_scroll(page, scroll_attempts=3, scroll_amount=500, delay_between_scrolls_s=(0.5, 2.0)):
-    """Simulates human-like scrolling."""
+def simulate_human_scroll(page, scroll_attempts=4, scroll_amount_range=(300, 700), delay_range=(0.5, 2.5)):
+    """Simulates human-like scrolling with variable amounts and delays."""
     log_message(f"Simulating human-like scrolling ({scroll_attempts} attempts)...")
     try:
         for _ in range(scroll_attempts):
+            scroll_amount = random.randint(*scroll_amount_range)
             page.evaluate(f"window.scrollBy(0, {scroll_amount});")
-            time.sleep(random.uniform(*delay_between_scrolls_s))
+            time.sleep(random.uniform(*delay_range))
         log_message("Scrolling simulated.")
     except Exception as e:
         log_message(f"Error simulating scroll: {e}")
 
+def simulate_background_activity(page):
+    """Simulates background activity like opening a new tab and closing it."""
+    log_message("Simulating background activity (new tab)...")
+    try:
+        new_page = page.context.new_page()
+        new_page.goto("https://www.example.com", timeout=30000)
+        time.sleep(random.uniform(1, 3))
+        new_page.close()
+        log_message("Background activity simulated.")
+    except Exception as e:
+        log_message(f"Error simulating background activity: {e}")
+
 def troubleshoot_dnb_playwright():
     """Attempts to load D&B page using Playwright through VPN and logs diagnostics."""
     with open(RESULTS_FILE, 'w') as f_results:
-        log_message("--- Starting Playwright DNB Scraper Troubleshooting (Super Stealth - Firefox) ---", f_results)
+        log_message("--- Starting Playwright DNB Scraper Troubleshooting (Enhanced Stealth - Firefox) ---", f_results)
         log_message(f"DNB Home URL: {DNB_HOME_URL}", f_results)
         log_message(f"Target DNB URL: {TARGET_DNB_URL}", f_results)
         log_message(f"Testing {len(WIREGUARD_CONFIG_FILES_TO_TEST)} WireGuard configurations.", f_results)
@@ -137,302 +142,110 @@ def troubleshoot_dnb_playwright():
 
             try:
                 with sync_playwright() as p:
-                    # --- Launch Firefox browser ---
-                    browser = p.firefox.launch(
+                    # Use persistent context to maintain cookies/session
+                    context_dir = f"playwright_context_{config_file.replace('.conf', '')}"
+                    browser = p.firefox.launch_persistent_context(
+                        user_data_dir=context_dir,
                         headless=True,
                     )
-                    # Set a realistic user agent, viewport, and other context options
-                    context = browser.new_context(
-                        # Randomize User-Agent from a list of common Firefox UAs
-                        user_agent=random.choice([
-                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0",
-                            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/115.0",
-                            "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
-                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
-                            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:120.0) Gecko/20100101 Firefox/120.0",
-                        ]),
-                        # Randomize viewport slightly
-                        viewport={"width": random.randint(1300, 1920), "height": random.randint(768, 1080)},
-                        bypass_csp=True, # Bypass Content Security Policy if any
-                        java_script_enabled=True, # Ensure JavaScript is enabled
-                        accept_downloads=False, # Prevent accidental downloads
-                        # Randomize Accept-Language header
-                        locale=random.choice(["en-US,en;q=0.9", "en-GB,en;q=0.9", "fr-FR,fr;q=0.9", "de-DE,de;q=0.9"]),
-                        extra_http_headers={ # Add more common headers
-                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                            'Accept-Encoding': 'gzip, deflate, br',
-                            'Connection': 'keep-alive',
-                            'Upgrade-Insecure-Requests': '1', # Indicate preference for encrypted and authenticated response
-                        }
-                    )
+                    context = browser
+                    context.set_default_timeout(60000)
                     page = context.new_page()
-                    page.set_default_timeout(60000) # Set default timeout for page operations to 60 seconds
 
-                    # Inject JavaScript to hide common automation flags and spoof fingerprints
-                    page.add_init_script("""
-                        // Spoof navigator.webdriver
-                        Object.defineProperty(navigator, 'webdriver', {
-                            get: () => undefined
-                        });
+                    # Enhanced context configuration
+                    context = browser
+                    context.add_init_script(
+                        path="stealth.js"  # External stealth script (defined below)
+                    )
+                    context.set_extra_http_headers({
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                        'Accept-Encoding': 'gzip, deflate, br',
+                        'Connection': 'keep-alive',
+                        'Upgrade-Insecure-Requests': '1',
+                    })
 
-                        // Spoof window.chrome (ensure it's undefined for Firefox)
-                        Object.defineProperty(window, 'chrome', {
-                            get: () => undefined
-                        });
+                    log_message("Playwright browser launched with persistent context and enhanced stealth.", f_results)
 
-                        // More comprehensive spoofing of navigator.plugins
-                        Object.defineProperty(navigator, 'plugins', {
-                            get: () => [
-                                {
-                                    name: 'Chrome PDF Viewer',
-                                    filename: 'internal-pdf-viewer',
-                                    description: 'Portable Document Format',
-                                    length: 1,
-                                },
-                                {
-                                    name: 'Chrome PDF Viewer',
-                                    filename: 'mhjfbmdgcfjbbgblmbkgbcpcojmhloef',
-                                    description: 'Portable Document Format',
-                                    length: 1,
-                                },
-                                {
-                                    name: 'Native Client',
-                                    filename: 'internal-nacl-plugin',
-                                    description: '',
-                                    length: 2,
-                                },
-                                {
-                                    name: 'Widevine Content Decryption Module',
-                                    filename: 'widevinecdm.dll',
-                                    description: 'Enables secure playback of HTML5 video & audio. (version: 4.10.2557.0)',
-                                    length: 1,
-                                },
-                                {
-                                    name: 'Shockwave Flash',
-                                    filename: 'libflashplayer.so',
-                                    description: 'Shockwave Flash 32.0 r0',
-                                    length: 1,
-                                },
-                            ],
-                        });
-
-                        // More comprehensive spoofing of navigator.mimeTypes
-                        Object.defineProperty(navigator, 'mimeTypes', {
-                            get: () => [
-                                {
-                                    type: 'application/pdf',
-                                    suffixes: 'pdf',
-                                    description: 'Portable Document Format',
-                                    enabledPlugin: navigator.plugins['Chrome PDF Viewer'],
-                                },
-                                {
-                                    type: 'application/x-google-chrome-pdf',
-                                    suffixes: 'pdf',
-                                    description: 'Portable Document Format',
-                                    enabledPlugin: navigator.plugins['Chrome PDF Viewer'],
-                                },
-                                {
-                                    type: 'application/x-nacl',
-                                    suffixes: '',
-                                    description: '',
-                                    enabledPlugin: navigator.plugins['Native Client'],
-                                },
-                                {
-                                    type: 'application/x-pnacl',
-                                    suffixes: '',
-                                    description: '',
-                                    enabledPlugin: navigator.plugins['Native Client'],
-                                },
-                                {
-                                    type: 'application/x-shockwave-flash',
-                                    suffixes: 'swf',
-                                    description: 'Shockwave Flash',
-                                    enabledPlugin: navigator.plugins['Shockwave Flash'],
-                                },
-                            ],
-                        });
-
-
-                        // Spoof navigator.languages
-                        Object.defineProperty(navigator, 'languages', {
-                            get: () => ['en-US', 'en']
-                        });
-
-                        // Spoof navigator.hardwareConcurrency and deviceMemory
-                        Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => random.choice([4, 8, 12]) }); # Random common values
-                        Object.defineProperty(navigator, 'deviceMemory', { get: () => random.choice([4, 8, 16]) }); # Random common values
-
-                        // Spoof window.outerWidth/Height to match innerWidth/Height (common headless detection)
-                        Object.defineProperty(window, 'outerWidth', { get: () => window.innerWidth });
-                        Object.defineProperty(window, 'outerHeight', { get: () => window.innerHeight });
-
-                        // Override console.debug to prevent detection from logging
-                        console.debug = () => {};
-
-                        // Spoof WebGL for Firefox (more robust)
-                        const getParameter = WebGLRenderingContext.prototype.getParameter;
-                        WebGLRenderingContext.prototype.getParameter = function(parameter) {
-                            // UNMASKED_VENDOR_WEBGL
-                            if (parameter === 37445) {
-                                return 'Mozilla'; // Standard vendor for Firefox
-                            }
-                            // UNMASKED_RENDERER_WEBGL
-                            if (parameter === 37446) {
-                                // Simulate common Firefox renderers
-                                const renderers = [
-                                    'Mozilla Firefox',
-                                    'ANGLE (NVIDIA GeForce RTX 3060 Laptop GPU)',
-                                    'ANGLE (Intel(R) Iris(R) Xe Graphics)',
-                                    'ANGLE (AMD Radeon Graphics)',
-                                ];
-                                return renderers[Math.floor(Math.random() * renderers.length)];
-                            }
-                            return getParameter.apply(this, arguments);
-                        };
-
-                        // Spoof navigator.connection
-                        Object.defineProperty(navigator, 'connection', {
-                            get: () => ({
-                                effectiveType: '4g',
-                                rtt: 50,
-                                downlink: 10,
-                                saveData: false,
-                            }),
-                        });
-
-                        // Spoof Permissions.query()
-                        const originalQuery = Permissions.prototype.query;
-                        Permissions.prototype.query = async (permissionDesc) => {
-                            if (permissionDesc.name === 'notifications') {
-                                return { state: 'denied' }; // Deny notifications by default
-                            }
-                            // For other permissions, return 'granted' or 'prompt'
-                            if (['geolocation', 'midi', 'camera', 'microphone', 'background-sync'].includes(permissionDesc.name)) {
-                                return { state: 'granted' };
-                            }
-                            return originalQuery.call(this, permissionDesc);
-                        };
-
-                    """)
-                    log_message("Playwright browser launched and configured for enhanced stealth (Firefox).", f_results)
-
-                    # --- Add a longer, more variable random delay before navigating to DNB Home ---
-                    delay_before_dnb_home = random.uniform(5, 20) # Longer random delay
+                    # Longer random delay before DNB Home
+                    delay_before_dnb_home = random.uniform(10, 25)
                     log_message(f"Waiting {delay_before_dnb_home:.2f} seconds before navigating to DNB Home URL...", f_results)
                     time.sleep(delay_before_dnb_home)
 
-                    # --- Simulate human-like mouse movement and scroll before DNB Home navigation ---
+                    # Simulate human-like behavior
                     simulate_human_mouse_movement(page)
                     simulate_human_scroll(page)
+                    simulate_background_activity(page)
 
-                    # --- Navigate to DNB Home URL and dump HTML content ---
+                    # Navigate to DNB Home URL
                     log_message(f"\nNavigating to DNB Home URL: {DNB_HOME_URL}...", f_results)
                     try:
-                        page.goto(DNB_HOME_URL, timeout=60000) # 60 seconds timeout for DNB page
-                        
-                        log_message("Waiting for DNB Home page to fully load (network idle)...", f_results)
-                        try:
-                            page.wait_for_load_state('networkidle', timeout=30000) # Wait for network to be idle
-                            log_message("DNB Home page load state is network idle.", f_results)
-                        except PlaywrightTimeoutError:
-                            log_message("Timeout waiting for DNB Home network idle state. Page might not have fully loaded, but we will proceed.", f_results)
-                        except Exception as e:
-                            log_message(f"Error waiting for DNB Home page load state: {e}", f_results)
-
-                        log_message(f"Successfully navigated to {DNB_HOME_URL}.", f_results)
-                        log_message(f"DNB Home Page Title: {page.title()}", f_results)
-                        
-                        # No screenshot for home page, but dump HTML content as proof
+                        page.goto(DNB_HOME_URL, timeout=60000)
+                        page.wait_for_load_state('networkidle', timeout=30000)
+                        log_message(f"Successfully navigated to {DNB_HOME_URL}. Title: {page.title()}", f_results)
                         dump_html_content(page, "dnb_home_page_content", config_file, f_results)
 
-                        # Check for CAPTCHA/Challenge elements on DNB Home
-                        captcha_detected = False
-                        if page.query_selector('iframe[src*="recaptcha"]') or \
-                           page.query_selector('div#cf-wrapper') or \
-                           page.query_selector('div[data-hcaptcha-widget-id]'):
-                            log_message("Potential CAPTCHA or challenge detected on DNB Home page!", f_results)
-                            captcha_detected = True
-                            take_screenshot(page, "dnb_home_captcha_detected", config_file, f_results) # Take screenshot if CAPTCHA
-
+                        # Check for CAPTCHA
+                        captcha_detected = page.query_selector('iframe[src*="recaptcha"]') or \
+                                          page.query_selector('div#cf-wrapper') or \
+                                          page.query_selector('div[data-hcaptcha-widget-id]')
+                        if captcha_detected:
+                            log_message("CAPTCHA detected on DNB Home page!", f_results)
+                            take_screenshot(page, "dnb_home_captcha_detected", config_file, f_results)
                         f_results.write(f"  DNB Home Page Status: SUCCESS{' (CAPTCHA Detected)' if captcha_detected else ''}\n")
-
                     except PlaywrightTimeoutError:
-                        log_message(f"Timeout navigating to {DNB_HOME_URL}. This indicates the page did not load within the allowed time.", f_results)
+                        log_message(f"Timeout navigating to {DNB_HOME_URL}.", f_results)
                         take_screenshot(page, "dnb_home_timeout", config_file, f_results)
                         dump_html_content(page, "dnb_home_timeout_content", config_file, f_results)
-                        log_message(f"DNB Home Page content on timeout (first 500 chars):\n{page.content()[:500]}...", f_results)
                         f_results.write("  DNB Home Page Status: FAILED - Navigation Timeout\n")
                     except Exception as e:
-                        log_message(f"An unexpected error occurred during DNB Home page navigation: {e}", f_results)
+                        log_message(f"Error navigating to DNB Home: {e}", f_results)
                         take_screenshot(page, "dnb_home_error", config_file, f_results)
                         dump_html_content(page, "dnb_home_error_content", config_file, f_results)
-                        log_message(f"DNB Home Page content on error (first 500 chars):\n{page.content()[:500]}...", f_results)
                         f_results.write(f"  DNB Home Page Status: FAILED - {type(e).__name__}\n")
-                        f_results.write(f"  Error Detail: {e}\n")
-                    
-                    # --- Add a second, more variable random delay before navigating to DNB Target URL ---
-                    delay_before_dnb_target = random.uniform(3, 8) # Second random delay
+
+                    # Delay before DNB Target
+                    delay_before_dnb_target = random.uniform(5, 12)
                     log_message(f"Waiting {delay_before_dnb_target:.2f} seconds before navigating to DNB Target URL...", f_results)
                     time.sleep(delay_before_dnb_target)
 
-                    # --- Simulate human-like mouse movement and scroll before DNB Target navigation ---
+                    # Simulate more human-like behavior
                     simulate_human_mouse_movement(page)
                     simulate_human_scroll(page)
 
-                    # --- Navigate to Target DNB URL and take screenshot ---
+                    # Navigate to Target DNB URL
                     log_message(f"\nNavigating to DNB Target URL: {TARGET_DNB_URL}...", f_results)
                     try:
-                        page.goto(TARGET_DNB_URL, timeout=60000) # 60 seconds timeout for DNB page
-                        
-                        log_message("Waiting for DNB Target page to fully load (network idle)...", f_results)
-                        try:
-                            page.wait_for_load_state('networkidle', timeout=30000) # Wait for network to be idle
-                            log_message("DNB Target page load state is network idle.", f_results)
-                        except PlaywrightTimeoutError:
-                            log_message("Timeout waiting for DNB Target network idle state. Page might not have fully loaded, but we will proceed.", f_results)
-                        except Exception as e:
-                            log_message(f"Error waiting for DNB Target page load state: {e}", f_results)
+                        page.goto(TARGET_DNB_URL, timeout=60000)
+                        page.wait_for_load_state('networkidle', timeout=30000)
+                        log_message(f"Successfully navigated to {TARGET_DNB_URL}. Title: {page.title()}", f_results)
+                        take_screenshot(page, "dnb_target_page_loaded", config_file, f_results)
+                        dump_html_content(page, "dnb_target_page_content", config_file, f_results)
 
-                        log_message(f"Successfully navigated to {TARGET_DNB_URL}.", f_results)
-                        log_message(f"DNB Target Page Title: {page.title()}", f_results)
-                        
-                        take_screenshot(page, "dnb_target_page_loaded", config_file, f_results) # Take screenshot of DNB Target page
-                        dump_html_content(page, "dnb_target_page_content", config_file, f_results) # Dump HTML content
-
-                        # Check for CAPTCHA/Challenge elements on DNB Target
-                        captcha_detected_target = False
-                        if page.query_selector('iframe[src*="recaptcha"]') or \
-                           page.query_selector('div#cf-wrapper') or \
-                           page.query_selector('div[data-hcaptcha-widget-id]'):
-                            log_message("Potential CAPTCHA or challenge detected on DNB Target page!", f_results)
-                            captcha_detected_target = True
+                        # Check for CAPTCHA
+                        captcha_detected_target = page.query_selector('iframe[src*="recaptcha"]') or \
+                                                 page.query_selector('div#cf-wrapper') or \
+                                                 page.query_selector('div[data-hcaptcha-widget-id]')
+                        if captcha_detected_target:
+                            log_message("CAPTCHA detected on DNB Target page!", f_results)
                             take_screenshot(page, "dnb_target_captcha_detected", config_file, f_results)
-                        
                         f_results.write(f"  DNB Target Page Status: SUCCESS{' (CAPTCHA Detected)' if captcha_detected_target else ''}\n")
-
-
                     except PlaywrightTimeoutError:
-                        log_message(f"Timeout navigating to {TARGET_DNB_URL}. This indicates the page did not load within the allowed time.", f_results)
+                        log_message(f"Timeout navigating to {TARGET_DNB_URL}.", f_results)
                         take_screenshot(page, "dnb_target_timeout", config_file, f_results)
                         dump_html_content(page, "dnb_target_timeout_content", config_file, f_results)
-                        log_message(f"DNB Target Page content on timeout (first 500 chars):\n{page.content()[:500]}...", f_results)
                         f_results.write("  DNB Target Page Status: FAILED - Navigation Timeout\n")
                     except Exception as e:
-                        log_message(f"An unexpected error occurred during DNB Target page navigation: {e}", f_results)
+                        log_message(f"Error navigating to DNB Target: {e}", f_results)
                         take_screenshot(page, "dnb_target_error", config_file, f_results)
                         dump_html_content(page, "dnb_target_error_content", config_file, f_results)
-                        log_message(f"DNB Target Page content on error (first 500 chars):\n{page.content()[:500]}...", f_results)
                         f_results.write(f"  DNB Target Page Status: FAILED - {type(e).__name__}\n")
-                        f_results.write(f"  Error Detail: {e}\n")
-                    
-                    context.close() # Close the context
-                    browser.close()
+
+                    context.close()
                     log_message("Playwright browser closed.", f_results)
 
             except Exception as e:
                 log_message(f"Error launching Playwright browser: {e}", f_results)
                 f_results.write(f"  Status: FAILED - Playwright Launch Error\n")
-                f_results.write(f"  Error Detail: {e}\n")
             finally:
                 bring_down_vpn(config_file, f_results)
 
