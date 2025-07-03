@@ -1,4 +1,4 @@
-name: DNB Scraper Troubleshooting
+name: Playwright DNB Scraper Troubleshooting
 
 on:
   # Allows you to run this workflow manually from the Actions tab in GitHub
@@ -12,11 +12,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Chromium Browser
-        # SeleniumBase needs a browser. Chromium is a good choice for headless environments.
+      - name: Install WireGuard tools and resolvconf
         run: |
           sudo apt-get update
-          sudo apt-get install -y chromium-browser
+          sudo apt-get install -y wireguard-tools resolvconf
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -25,21 +24,26 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          pip install seleniumbase beautifulsoup4 requests # requests is included for general utility
+          pip install playwright beautifulsoup4 requests
+
+      - name: Install Playwright browsers
+        # This step is crucial for Playwright to have the browser binaries
+        run: |
+          playwright install chromium
 
       - name: Run DNB Scraper Troubleshooting Script
         run: |
-          python dnb_scraper_troubleshoot.py
+          python dnb_playwright_troubleshoot.py
 
       - name: Upload Troubleshooting Results
         uses: actions/upload-artifact@v4
         with:
-          name: dnb-troubleshoot-results
-          path: dnb_troubleshoot_results.txt
+          name: dnb-playwright-troubleshoot-results
+          path: dnb_playwright_troubleshoot_results.txt
 
       - name: Upload Screenshots
         uses: actions/upload-artifact@v4
         with:
-          name: dnb-troubleshoot-screenshots
-          path: troubleshoot_screenshots/
+          name: dnb-playwright-troubleshoot-screenshots
+          path: playwright_troubleshoot_screenshots/
           if-no-files-found: ignore # Don't fail if no screenshots are found
