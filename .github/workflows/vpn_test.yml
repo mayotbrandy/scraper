@@ -1,11 +1,11 @@
-name: VPN Connectivity Test
+name: DNB Scraper with WireGuard & SeleniumBase
 
 on:
   # Allows you to run this workflow manually from the Actions tab in GitHub
   workflow_dispatch:
 
 jobs:
-  test-vpn-connections:
+  run-scraper:
     runs-on: ubuntu-latest # GitHub-hosted runner with Ubuntu
 
     steps:
@@ -18,6 +18,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y wireguard-tools resolvconf
 
+      - name: Install Chrome/Chromium for SeleniumBase
+        # SeleniumBase needs a browser. Chromium is a good choice for headless environments.
+        run: |
+          sudo apt-get install -y chromium-browser
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -25,17 +30,17 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          pip install requests
+          pip install requests beautifulsoup4 dnspython seleniumbase
 
-      - name: Run VPN connectivity test script
-        # The Python script will handle calling wg-quick with sudo
+      - name: Run DNB Scraper script
+        # The Python script will handle calling wg-quick with sudo and SeleniumBase operations
         run: |
-          python vpn_test_script.py
+          python linscr.py
 
-      - name: Upload VPN test results
+      - name: Upload Scraper results
         # This step uploads the results file as a workflow artifact,
         # which you can download from the GitHub Actions run summary page.
         uses: actions/upload-artifact@v4
         with:
-          name: vpn-test-results
-          path: vpn_test_results.txt
+          name: dnb-scraper-results
+          path: scraper_results.txt
