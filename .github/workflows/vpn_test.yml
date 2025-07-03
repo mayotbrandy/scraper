@@ -44,3 +44,11 @@ jobs:
         with:
           name: dnb-scraper-results
           path: scraper_results.txt
+
+      - name: Upload Screenshots
+        # This step uploads the screenshots directory as a separate artifact.
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraper-screenshots
+          path: screenshots/ # Path to the directory where screenshots are saved
+          if-no-files-found: ignore # Don't fail if no screenshots are found (e.g., if script failed early)
