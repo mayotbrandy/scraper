@@ -8,24 +8,29 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 # from bs4 import BeautifulSoup 
 
 # --- Configuration ---
-DNB_HOME_URL = "https://www.dnb.com/" # New: DNB Home Page
+DNB_HOME_URL = "https://www.dnb.com/"
 TARGET_DNB_URL = "https://www.dnb.com/business-directory/company-information.oil_and_gas_extraction.ca.html?page=3"
-PUBLIC_TEST_URL = "https://www.wikipedia.org" # A general public website to test basic connectivity
-IP_CHECK_URL = "https://ifconfig.me/ip" # Website to check public IP
 RESULTS_FILE = "dnb_playwright_troubleshoot_results.txt"
 SCREENSHOT_DIR = "playwright_troubleshoot_screenshots"
+HTML_DUMP_DIR = "playwright_troubleshoot_html_dumps"
 
-# List of WireGuard config files to test (using first 5 for focused troubleshooting)
+# List of all 9 WireGuard config files to test
+# IMPORTANT: Ensure these names exactly match your .conf files in the repository.
 WIREGUARD_CONFIG_FILES_TO_TEST = [
     "ch-zrh-wg-001.conf",
     "ch-zrh-wg-004.conf",
     "ch-zrh-wg-404.conf",
     "us-phx-wg-101.conf",
+    "us-phx-wg-102.conf", # Placeholder, adjust if your file names differ
     "us-phx-wg-103.conf",
+    "us-phx-wg-104.conf", # Placeholder, adjust if your file names differ
+    "us-atl-wg-001.conf", # Placeholder, adjust if your file names differ
+    "us-dal-wg-001.conf", # Placeholder, adjust if your file names differ
 ]
 
-# Ensure screenshot directory exists
+# Ensure directories exist
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+os.makedirs(HTML_DUMP_DIR, exist_ok=True)
 
 # --- Script Logic ---
 def log_message(message, file_handle=None):
@@ -45,6 +50,19 @@ def take_screenshot(page, filename_prefix, config_file_name, file_handle):
         log_message(f"Screenshot saved: {screenshot_path}", file_handle)
     except Exception as e:
         log_message(f"Error taking screenshot {screenshot_name}: {e}", file_handle)
+
+def dump_html_content(page, filename_prefix, config_file_name, file_handle):
+    """Dumps the full HTML content of the page to a file."""
+    html_dump_name = f"{config_file_name.replace('.conf', '')}_{filename_prefix}_{datetime.now().strftime('%H%M%S')}.html"
+    html_dump_path = os.path.join(HTML_DUMP_DIR, html_dump_name)
+    try:
+        content = page.content()
+        with open(html_dump_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        log_message(f"HTML content dumped: {html_dump_path}", file_handle)
+    except Exception as e:
+        log_message(f"Error dumping HTML content {html_dump_name}: {e}", file_handle)
+
 
 def bring_up_vpn(config_file, file_handle):
     """Brings up a WireGuard VPN tunnel using wg-quick."""
@@ -92,15 +110,23 @@ def simulate_human_mouse_movement(page, steps=5, delay_ms=50):
     except Exception as e:
         log_message(f"Error simulating mouse movement: {e}")
 
+def simulate_human_scroll(page, scroll_attempts=3, scroll_amount=500, delay_between_scrolls_s=(0.5, 2.0)):
+    """Simulates human-like scrolling."""
+    log_message(f"Simulating human-like scrolling ({scroll_attempts} attempts)...")
+    try:
+        for _ in range(scroll_attempts):
+            page.evaluate(f"window.scrollBy(0, {scroll_amount});")
+            time.sleep(random.uniform(*delay_between_scrolls_s))
+        log_message("Scrolling simulated.")
+    except Exception as e:
+        log_message(f"Error simulating scroll: {e}")
 
 def troubleshoot_dnb_playwright():
     """Attempts to load D&B page using Playwright through VPN and logs diagnostics."""
     with open(RESULTS_FILE, 'w') as f_results:
-        log_message("--- Starting Playwright DNB Scraper Troubleshooting (DNB Home Page Focus - Firefox) ---", f_results)
+        log_message("--- Starting Playwright DNB Scraper Troubleshooting (Finalized - Firefox) ---", f_results)
         log_message(f"DNB Home URL: {DNB_HOME_URL}", f_results)
         log_message(f"Target DNB URL: {TARGET_DNB_URL}", f_results)
-        log_message(f"Public Test URL: {PUBLIC_TEST_URL}", f_results)
-        log_message(f"IP Check URL: {IP_CHECK_URL}", f_results)
         log_message(f"Testing {len(WIREGUARD_CONFIG_FILES_TO_TEST)} WireGuard configurations.", f_results)
 
         for config_file in WIREGUARD_CONFIG_FILES_TO_TEST:
@@ -188,48 +214,16 @@ def troubleshoot_dnb_playwright():
                     """)
                     log_message("Playwright browser launched and configured for enhanced stealth (Firefox).", f_results)
 
-                    # --- Get current public IP through VPN and take screenshot ---
-                    log_message(f"Checking public IP through VPN at {IP_CHECK_URL}...", f_results)
-                    try:
-                        page.goto(IP_CHECK_URL, timeout=15000) # 15 seconds timeout
-                        public_ip = page.inner_text("pre").strip()
-                        log_message(f"Public IP through VPN: {public_ip}", f_results)
-                        take_screenshot(page, "ip_check", config_file, f_results) # Take screenshot of IP page
-                    except PlaywrightTimeoutError:
-                        log_message("Timeout checking public IP. VPN might not be fully functional or DNS issue.", f_results)
-                        public_ip = "IP check timed out"
-                        take_screenshot(page, "ip_check_timeout", config_file, f_results) # Screenshot on timeout
-                    except Exception as e:
-                        log_message(f"Error checking public IP: {e}", f_results)
-                        public_ip = f"IP check failed: {e}"
-                        take_screenshot(page, "ip_check_error", config_file, f_results) # Screenshot on error
-                    f_results.write(f"  Public IP through VPN: {public_ip}\n")
-
-                    # --- Test general public website connectivity ---
-                    log_message(f"\nTesting general public website: {PUBLIC_TEST_URL}...", f_results)
-                    try:
-                        page.goto(PUBLIC_TEST_URL, timeout=30000) # 30 seconds timeout
-                        log_message(f"Successfully navigated to {PUBLIC_TEST_URL}. Title: {page.title()}", f_results)
-                        take_screenshot(page, "public_site", config_file, f_results) # Take screenshot of public site
-                        f_results.write(f"  Public Site Test: SUCCESS - Title: {page.title()}\n")
-                    except PlaywrightTimeoutError:
-                        log_message(f"Timeout navigating to {PUBLIC_TEST_URL}.", f_results)
-                        f_results.write(f"  Public Site Test: FAILED - Timeout\n")
-                        take_screenshot(page, "public_site_timeout", config_file, f_results)
-                    except Exception as e:
-                        log_message(f"Error navigating to {PUBLIC_TEST_URL}: {e}", f_results)
-                        f_results.write(f"  Public Site Test: FAILED - Error: {e}\n")
-                        take_screenshot(page, "public_site_error", config_file, f_results)
-
-                    # --- Add a larger random delay before navigating to DNB Home ---
-                    delay_before_dnb_home = random.uniform(5, 15) # Random delay between 5 and 15 seconds
+                    # --- Add a longer, more variable random delay before navigating to DNB Home ---
+                    delay_before_dnb_home = random.uniform(5, 20) # Longer random delay
                     log_message(f"Waiting {delay_before_dnb_home:.2f} seconds before navigating to DNB Home URL...", f_results)
                     time.sleep(delay_before_dnb_home)
 
-                    # --- Simulate human-like mouse movement before DNB Home navigation ---
+                    # --- Simulate human-like mouse movement and scroll before DNB Home navigation ---
                     simulate_human_mouse_movement(page)
+                    simulate_human_scroll(page)
 
-                    # --- Navigate to DNB Home URL and take screenshot ---
+                    # --- Navigate to DNB Home URL and dump HTML content ---
                     log_message(f"\nNavigating to DNB Home URL: {DNB_HOME_URL}...", f_results)
                     try:
                         page.goto(DNB_HOME_URL, timeout=60000) # 60 seconds timeout for DNB page
@@ -246,7 +240,8 @@ def troubleshoot_dnb_playwright():
                         log_message(f"Successfully navigated to {DNB_HOME_URL}.", f_results)
                         log_message(f"DNB Home Page Title: {page.title()}", f_results)
                         
-                        take_screenshot(page, "dnb_home_page_loaded", config_file, f_results) # Take screenshot of DNB Home page
+                        # No screenshot for home page, but dump HTML content as proof
+                        dump_html_content(page, "dnb_home_page_content", config_file, f_results)
 
                         # Check for CAPTCHA/Challenge elements on DNB Home
                         captcha_detected = False
@@ -255,29 +250,34 @@ def troubleshoot_dnb_playwright():
                            page.query_selector('div[data-hcaptcha-widget-id]'):
                             log_message("Potential CAPTCHA or challenge detected on DNB Home page!", f_results)
                             captcha_detected = True
-                            take_screenshot(page, "dnb_home_captcha_detected", config_file, f_results)
+                            take_screenshot(page, "dnb_home_captcha_detected", config_file, f_results) # Take screenshot if CAPTCHA
 
                         f_results.write(f"  DNB Home Page Status: SUCCESS{' (CAPTCHA Detected)' if captcha_detected else ''}\n")
-                        f_results.write(f"  DNB Home Page Content (first 500 chars):\n{page.content()[:500]}...\n")
 
                     except PlaywrightTimeoutError:
                         log_message(f"Timeout navigating to {DNB_HOME_URL}. This indicates the page did not load within the allowed time.", f_results)
                         take_screenshot(page, "dnb_home_timeout", config_file, f_results)
+                        dump_html_content(page, "dnb_home_timeout_content", config_file, f_results)
                         log_message(f"DNB Home Page content on timeout (first 500 chars):\n{page.content()[:500]}...", f_results)
                         f_results.write("  DNB Home Page Status: FAILED - Navigation Timeout\n")
                     except Exception as e:
                         log_message(f"An unexpected error occurred during DNB Home page navigation: {e}", f_results)
                         take_screenshot(page, "dnb_home_error", config_file, f_results)
+                        dump_html_content(page, "dnb_home_error_content", config_file, f_results)
                         log_message(f"DNB Home Page content on error (first 500 chars):\n{page.content()[:500]}...", f_results)
                         f_results.write(f"  DNB Home Page Status: FAILED - {type(e).__name__}\n")
                         f_results.write(f"  Error Detail: {e}\n")
                     
-                    # --- Add a small random delay before navigating to DNB Target URL ---
-                    delay_before_dnb_target = random.uniform(2, 5)
+                    # --- Add a second, more variable random delay before navigating to DNB Target URL ---
+                    delay_before_dnb_target = random.uniform(3, 8) # Second random delay
                     log_message(f"Waiting {delay_before_dnb_target:.2f} seconds before navigating to DNB Target URL...", f_results)
                     time.sleep(delay_before_dnb_target)
 
-                    # --- Navigate to Target DNB URL and take screenshot (still useful for full context) ---
+                    # --- Simulate human-like mouse movement and scroll before DNB Target navigation ---
+                    simulate_human_mouse_movement(page)
+                    simulate_human_scroll(page)
+
+                    # --- Navigate to Target DNB URL and take screenshot ---
                     log_message(f"\nNavigating to DNB Target URL: {TARGET_DNB_URL}...", f_results)
                     try:
                         page.goto(TARGET_DNB_URL, timeout=60000) # 60 seconds timeout for DNB page
@@ -295,6 +295,7 @@ def troubleshoot_dnb_playwright():
                         log_message(f"DNB Target Page Title: {page.title()}", f_results)
                         
                         take_screenshot(page, "dnb_target_page_loaded", config_file, f_results) # Take screenshot of DNB Target page
+                        dump_html_content(page, "dnb_target_page_content", config_file, f_results) # Dump HTML content
 
                         # Check for CAPTCHA/Challenge elements on DNB Target
                         captcha_detected_target = False
@@ -306,17 +307,18 @@ def troubleshoot_dnb_playwright():
                             take_screenshot(page, "dnb_target_captcha_detected", config_file, f_results)
                         
                         f_results.write(f"  DNB Target Page Status: SUCCESS{' (CAPTCHA Detected)' if captcha_detected_target else ''}\n")
-                        f_results.write(f"  DNB Target Page Content (first 500 chars):\n{page.content()[:500]}...\n")
 
 
                     except PlaywrightTimeoutError:
                         log_message(f"Timeout navigating to {TARGET_DNB_URL}. This indicates the page did not load within the allowed time.", f_results)
                         take_screenshot(page, "dnb_target_timeout", config_file, f_results)
+                        dump_html_content(page, "dnb_target_timeout_content", config_file, f_results)
                         log_message(f"DNB Target Page content on timeout (first 500 chars):\n{page.content()[:500]}...", f_results)
                         f_results.write("  DNB Target Page Status: FAILED - Navigation Timeout\n")
                     except Exception as e:
                         log_message(f"An unexpected error occurred during DNB Target page navigation: {e}", f_results)
                         take_screenshot(page, "dnb_target_error", config_file, f_results)
+                        dump_html_content(page, "dnb_target_error_content", config_file, f_results)
                         log_message(f"DNB Target Page content on error (first 500 chars):\n{page.content()[:500]}...", f_results)
                         f_results.write(f"  DNB Target Page Status: FAILED - {type(e).__name__}\n")
                         f_results.write(f"  Error Detail: {e}\n")
