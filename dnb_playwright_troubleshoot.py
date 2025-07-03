@@ -1,11 +1,8 @@
 import os
 import time
-import subprocess
 import random
 from datetime import datetime
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
-# BeautifulSoup is no longer strictly needed as we removed scraping, but keeping it for now
-# from bs4 import BeautifulSoup 
 
 # --- Configuration ---
 DNB_HOME_URL = "https://www.dnb.com/"
@@ -14,18 +11,13 @@ RESULTS_FILE = "dnb_playwright_troubleshoot_results.txt"
 SCREENSHOT_DIR = "playwright_troubleshoot_screenshots"
 HTML_DUMP_DIR = "playwright_troubleshoot_html_dumps"
 
-# List of all 9 WireGuard config files to test
-# IMPORTANT: Ensure these names exactly match your .conf files in the repository.
-WIREGUARD_CONFIG_FILES_TO_TEST = [
-    "ch-zrh-wg-001.conf",
-    "ch-zrh-wg-004.conf",
-    "ch-zrh-wg-404.conf",
-    "us-phx-wg-101.conf",
-    "us-phx-wg-102.conf", # Placeholder, adjust if your file names differ
-    "us-phx-wg-103.conf",
-    "us-phx-wg-104.conf", # Placeholder, adjust if your file names differ
-    "us-atl-wg-001.conf", # Placeholder, adjust if your file names differ
-    "us-dal-wg-001.conf", # Placeholder, adjust if your file names differ
+# List of 5 SOCKS5 proxies to test, chosen from scraper.py
+SOCKS5_PROXIES_TO_TEST = [
+    "us-qas-wg-socks5-001.relays.mullvad.net:1080",
+    "nl-ams-wg-socks5-001.relays.mullvad.net:1080",
+    "de-ber-wg-socks5-001.relays.mullvad.net:1080",
+    "us-den-wg-socks5-101.relays.mullvad.net:1080",
+    "us-lax-wg-socks5-101.relays.mullvad.net:1080"
 ]
 
 # Ensure directories exist
@@ -41,9 +33,11 @@ def log_message(message, file_handle=None):
     if file_handle:
         file_handle.write(full_message + "\n")
 
-def take_screenshot(page, filename_prefix, config_file_name, file_handle):
+def take_screenshot(page, filename_prefix, proxy_name, file_handle):
     """Takes a screenshot and saves it to the troubleshooting directory."""
-    screenshot_name = f"{config_file_name.replace('.conf', '')}_{filename_prefix}_{datetime.now().strftime('%H%M%S')}.png"
+    # Sanitize proxy_name for filename
+    sanitized_proxy_name = proxy_name.replace(':', '_').replace('.', '_').replace('-', '_')
+    screenshot_name = f"{sanitized_proxy_name}_{filename_prefix}_{datetime.now().strftime('%H%M%S')}.png"
     screenshot_path = os.path.join(SCREENSHOT_DIR, screenshot_name)
     try:
         page.screenshot(path=screenshot_path, full_page=True)
@@ -51,9 +45,11 @@ def take_screenshot(page, filename_prefix, config_file_name, file_handle):
     except Exception as e:
         log_message(f"Error taking screenshot {screenshot_name}: {e}", file_handle)
 
-def dump_html_content(page, filename_prefix, config_file_name, file_handle):
+def dump_html_content(page, filename_prefix, proxy_name, file_handle):
     """Dumps the full HTML content of the page to a file."""
-    html_dump_name = f"{config_file_name.replace('.conf', '')}_{filename_prefix}_{datetime.now().strftime('%H%M%S')}.html"
+    # Sanitize proxy_name for filename
+    sanitized_proxy_name = proxy_name.replace(':', '_').replace('.', '_').replace('-', '_')
+    html_dump_name = f"{sanitized_proxy_name}_{filename_prefix}_{datetime.now().strftime('%H%M%S')}.html"
     html_dump_path = os.path.join(HTML_DUMP_DIR, html_dump_name)
     try:
         content = page.content()
@@ -62,33 +58,6 @@ def dump_html_content(page, filename_prefix, config_file_name, file_handle):
         log_message(f"HTML content dumped: {html_dump_path}", file_handle)
     except Exception as e:
         log_message(f"Error dumping HTML content {html_dump_name}: {e}", file_handle)
-
-
-def bring_up_vpn(config_file, file_handle):
-    """Brings up a WireGuard VPN tunnel using wg-quick."""
-    config_path = os.path.join(os.getcwd(), config_file)
-    log_message(f"Attempting to bring up WireGuard tunnel with '{config_file}'...", file_handle)
-    up_command = ['sudo', 'wg-quick', 'up', config_path]
-    up_process = subprocess.run(up_command, capture_output=True, text=True, check=False)
-
-    if up_process.returncode != 0:
-        log_message(f"Error bringing up VPN: {up_process.stderr.strip()}", file_handle)
-        return False
-    log_message(f"VPN tunnel for '{config_file}' brought up successfully. Waiting 5 seconds for tunnel to stabilize...", file_handle)
-    time.sleep(5) # Give VPN time to establish
-    return True
-
-def bring_down_vpn(config_file, file_handle):
-    """Brings down a WireGuard VPN tunnel using wg-quick."""
-    config_path = os.path.join(os.getcwd(), config_file)
-    log_message(f"Attempting to bring down WireGuard tunnel for '{config_file}'...", file_handle)
-    down_command = ['sudo', 'wg-quick', 'down', config_path]
-    down_process = subprocess.run(down_command, capture_output=True, text=True, check=False)
-
-    if down_process.returncode != 0:
-        log_message(f"Error bringing down VPN: {down_process.stderr.strip()}", file_handle)
-    else:
-        log_message(f"VPN tunnel for '{config_file}' brought down successfully.", file_handle)
 
 def simulate_human_mouse_movement(page, steps=5, delay_ms=50):
     """Simulates a few human-like mouse movements."""
@@ -122,21 +91,18 @@ def simulate_human_scroll(page, scroll_attempts=3, scroll_amount=500, delay_betw
         log_message(f"Error simulating scroll: {e}")
 
 def troubleshoot_dnb_playwright():
-    """Attempts to load D&B page using Playwright through VPN and logs diagnostics."""
+    """Attempts to load D&B page using Playwright through SOCKS5 proxies and logs diagnostics."""
     with open(RESULTS_FILE, 'w') as f_results:
-        log_message("--- Starting Playwright DNB Scraper Troubleshooting (Finalized - Firefox) ---", f_results)
+        log_message("--- Starting Playwright DNB Scraper Troubleshooting (SOCKS5 Proxies - Firefox) ---", f_results)
         log_message(f"DNB Home URL: {DNB_HOME_URL}", f_results)
         log_message(f"Target DNB URL: {TARGET_DNB_URL}", f_results)
-        log_message(f"Testing {len(WIREGUARD_CONFIG_FILES_TO_TEST)} WireGuard configurations.", f_results)
+        log_message(f"Testing {len(SOCKS5_PROXIES_TO_TEST)} SOCKS5 proxies.", f_results)
 
-        for config_file in WIREGUARD_CONFIG_FILES_TO_TEST:
-            log_message(f"\n--- Testing with WireGuard config: {config_file} ---", f_results)
-            f_results.write(f"\n--- WireGuard Config: {config_file} ---\n")
+        for proxy_address in SOCKS5_PROXIES_TO_TEST:
+            log_message(f"\n--- Testing with SOCKS5 Proxy: {proxy_address} ---", f_results)
+            f_results.write(f"\n--- SOCKS5 Proxy: {proxy_address} ---\n")
             
-            if not bring_up_vpn(config_file, f_results):
-                log_message(f"Skipping config {config_file} due to VPN setup failure.", f_results)
-                f_results.write(f"  VPN Setup Failed. Skipping this config.\n")
-                continue
+            proxy_config = {"server": f"socks5://{proxy_address}"}
 
             try:
                 with sync_playwright() as p:
@@ -156,7 +122,8 @@ def troubleshoot_dnb_playwright():
                             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                             'Accept-Encoding': 'gzip, deflate, br',
                             'Connection': 'keep-alive'
-                        }
+                        },
+                        proxy=proxy_config # Use the SOCKS5 proxy
                     )
                     page = context.new_page()
                     page.set_default_timeout(60000) # Set default timeout for page operations to 60 seconds
@@ -241,7 +208,7 @@ def troubleshoot_dnb_playwright():
                         log_message(f"DNB Home Page Title: {page.title()}", f_results)
                         
                         # No screenshot for home page, but dump HTML content as proof
-                        dump_html_content(page, "dnb_home_page_content", config_file, f_results)
+                        dump_html_content(page, "dnb_home_page_content", proxy_address, f_results)
 
                         # Check for CAPTCHA/Challenge elements on DNB Home
                         captcha_detected = False
@@ -250,20 +217,20 @@ def troubleshoot_dnb_playwright():
                            page.query_selector('div[data-hcaptcha-widget-id]'):
                             log_message("Potential CAPTCHA or challenge detected on DNB Home page!", f_results)
                             captcha_detected = True
-                            take_screenshot(page, "dnb_home_captcha_detected", config_file, f_results) # Take screenshot if CAPTCHA
+                            take_screenshot(page, "dnb_home_captcha_detected", proxy_address, f_results) # Take screenshot if CAPTCHA
 
                         f_results.write(f"  DNB Home Page Status: SUCCESS{' (CAPTCHA Detected)' if captcha_detected else ''}\n")
 
                     except PlaywrightTimeoutError:
                         log_message(f"Timeout navigating to {DNB_HOME_URL}. This indicates the page did not load within the allowed time.", f_results)
-                        take_screenshot(page, "dnb_home_timeout", config_file, f_results)
-                        dump_html_content(page, "dnb_home_timeout_content", config_file, f_results)
+                        take_screenshot(page, "dnb_home_timeout", proxy_address, f_results)
+                        dump_html_content(page, "dnb_home_timeout_content", proxy_address, f_results)
                         log_message(f"DNB Home Page content on timeout (first 500 chars):\n{page.content()[:500]}...", f_results)
                         f_results.write("  DNB Home Page Status: FAILED - Navigation Timeout\n")
                     except Exception as e:
                         log_message(f"An unexpected error occurred during DNB Home page navigation: {e}", f_results)
-                        take_screenshot(page, "dnb_home_error", config_file, f_results)
-                        dump_html_content(page, "dnb_home_error_content", config_file, f_results)
+                        take_screenshot(page, "dnb_home_error", proxy_address, f_results)
+                        dump_html_content(page, "dnb_home_error_content", proxy_address, f_results)
                         log_message(f"DNB Home Page content on error (first 500 chars):\n{page.content()[:500]}...", f_results)
                         f_results.write(f"  DNB Home Page Status: FAILED - {type(e).__name__}\n")
                         f_results.write(f"  Error Detail: {e}\n")
@@ -294,8 +261,8 @@ def troubleshoot_dnb_playwright():
                         log_message(f"Successfully navigated to {TARGET_DNB_URL}.", f_results)
                         log_message(f"DNB Target Page Title: {page.title()}", f_results)
                         
-                        take_screenshot(page, "dnb_target_page_loaded", config_file, f_results) # Take screenshot of DNB Target page
-                        dump_html_content(page, "dnb_target_page_content", config_file, f_results) # Dump HTML content
+                        take_screenshot(page, "dnb_target_page_loaded", proxy_address, f_results) # Take screenshot of DNB Target page
+                        dump_html_content(page, "dnb_target_page_content", proxy_address, f_results) # Dump HTML content
 
                         # Check for CAPTCHA/Challenge elements on DNB Target
                         captcha_detected_target = False
@@ -304,21 +271,21 @@ def troubleshoot_dnb_playwright():
                            page.query_selector('div[data-hcaptcha-widget-id]'):
                             log_message("Potential CAPTCHA or challenge detected on DNB Target page!", f_results)
                             captcha_detected_target = True
-                            take_screenshot(page, "dnb_target_captcha_detected", config_file, f_results)
+                            take_screenshot(page, "dnb_target_captcha_detected", proxy_address, f_results)
                         
                         f_results.write(f"  DNB Target Page Status: SUCCESS{' (CAPTCHA Detected)' if captcha_detected_target else ''}\n")
 
 
                     except PlaywrightTimeoutError:
                         log_message(f"Timeout navigating to {TARGET_DNB_URL}. This indicates the page did not load within the allowed time.", f_results)
-                        take_screenshot(page, "dnb_target_timeout", config_file, f_results)
-                        dump_html_content(page, "dnb_target_timeout_content", config_file, f_results)
+                        take_screenshot(page, "dnb_target_timeout", proxy_address, f_results)
+                        dump_html_content(page, "dnb_target_timeout_content", proxy_address, f_results)
                         log_message(f"DNB Target Page content on timeout (first 500 chars):\n{page.content()[:500]}...", f_results)
                         f_results.write("  DNB Target Page Status: FAILED - Navigation Timeout\n")
                     except Exception as e:
                         log_message(f"An unexpected error occurred during DNB Target page navigation: {e}", f_results)
-                        take_screenshot(page, "dnb_target_error", config_file, f_results)
-                        dump_html_content(page, "dnb_target_error_content", config_file, f_results)
+                        take_screenshot(page, "dnb_target_error", proxy_address, f_results)
+                        dump_html_content(page, "dnb_target_error_content", proxy_address, f_results)
                         log_message(f"DNB Target Page content on error (first 500 chars):\n{page.content()[:500]}...", f_results)
                         f_results.write(f"  DNB Target Page Status: FAILED - {type(e).__name__}\n")
                         f_results.write(f"  Error Detail: {e}\n")
@@ -331,8 +298,6 @@ def troubleshoot_dnb_playwright():
                 log_message(f"Error launching Playwright browser: {e}", f_results)
                 f_results.write(f"  Status: FAILED - Playwright Launch Error\n")
                 f_results.write(f"  Error Detail: {e}\n")
-            finally:
-                bring_down_vpn(config_file, f_results)
 
         log_message("\n--- Playwright DNB Scraper Troubleshooting Complete ---", f_results)
 
