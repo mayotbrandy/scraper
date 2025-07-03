@@ -1,136 +1,118 @@
-import requests
 import os
-import subprocess
 import time
-import json
 from datetime import datetime
+from seleniumbase import Driver
+from selenium.webdriver.common.by import By
+from selenium.common.exceptions import WebDriverException, TimeoutException, SessionNotCreatedException
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 
 # --- Configuration ---
-# Define groups of WireGuard config files and their corresponding API endpoints.
-# Each tuple contains (config_file_name, API_URL, description_of_api, key_to_extract_from_json)
-# If key_to_extract_from_json is None, the full JSON response will be saved.
-TEST_CONFIGS = [
-    # Group 1: IP Geo-location API
-    ("ch-zrh-wg-001.conf", "http://ip-api.com/json", "IP Geo-location", ["query", "country", "city"]),
-    ("ch-zrh-wg-004.conf", "http://ip-api.com/json", "IP Geo-location", ["query", "country", "city"]),
-    ("ch-zrh-wg-404.conf", "http://ip-api.com/json", "IP Geo-location", ["query", "country", "city"]),
+TARGET_URL = "https://www.dnb.com/business-directory/company-information.oil_and_gas_extraction.ca.html?page=3"
+RESULTS_FILE = "dnb_troubleshoot_results.txt"
+SCREENSHOT_DIR = "troubleshoot_screenshots"
 
-    # Group 2: Random Cat Fact API
-    ("us-phx-wg-101.conf", "https://catfact.ninja/fact", "Random Cat Fact", "fact"),
-    ("us-phx-wg-103.conf", "https://catfact.ninja/fact", "Random Cat Fact", "fact"),
-    ("us-phx-wg-202.conf", "https://catfact.ninja/fact", "Random Cat Fact", "fact"),
-
-    # Group 3: World Time by IP API
-    ("us-sjc-wg-002.conf", "http://worldtimeapi.org/api/ip", "World Time by IP", ["datetime", "timezone"]),
-    ("us-sjc-wg-302.conf", "http://worldtimeapi.org/api/ip", "World Time by IP", ["datetime", "timezone"]),
-    ("us-sjc-wg-504.conf", "http://worldtimeapi.org/api/ip", "World Time by IP", ["datetime", "timezone"]),
-]
-
-# The name of the file where results will be saved.
-# This file will be created/overwritten in the repository.
-RESULTS_FILE = "vpn_test_results.txt"
-
-# Time to wait after bringing up a VPN tunnel before testing connectivity (in seconds).
-# This allows the VPN connection to establish.
-VPN_SETUP_WAIT_TIME = 5
+# Ensure screenshot directory exists
+os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
 # --- Script Logic ---
-def run_connectivity_test():
-    """
-    Runs connectivity and API tests for each specified WireGuard config using wg-quick.
-    This script is designed to run in environments like GitHub Actions where
-    wg-quick is available and can be run with sudo permissions.
-    """
-    print(f"Starting WireGuard connectivity and API tests. Results will be saved to '{RESULTS_FILE}'.")
-    print("-" * 70)
+def log_message(message, file_handle=None):
+    """Logs a message to console and optionally to a file."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    full_message = f"[{timestamp}] {message}"
+    print(full_message)
+    if file_handle:
+        file_handle.write(full_message + "\n")
 
-    results = []
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    results.append(f"--- VPN & API Test Run: {current_time} ---")
-    results.append(f"Total configs to test: {len(TEST_CONFIGS)}\n")
-
-    for config_file, api_url, api_description, json_key_or_keys in TEST_CONFIGS:
-        config_path = os.path.join(os.getcwd(), config_file)
-        print(f"Processing '{config_file}' for {api_description} API ({api_url})...")
-        results.append(f"Config: {config_file}")
-        results.append(f"  API Test: {api_description} ({api_url})")
-
-        # --- Bring up WireGuard Tunnel ---
-        up_command = ['sudo', 'wg-quick', 'up', config_path]
-        up_process = subprocess.run(up_command, capture_output=True, text=True, check=False)
-
-        if up_process.returncode != 0:
-            status = "VPN_UP_FAILED"
-            detail = f"Error bringing up VPN: {up_process.stderr.strip()}"
-            print(f"  {status}: {detail}")
-            results.append(f"  Status: {status}")
-            results.append(f"  Detail: {detail}\n")
-            continue # Skip to the next config if VPN failed to come up
-
-        print(f"  VPN tunnel for '{config_file}' brought up successfully. Waiting {VPN_SETUP_WAIT_TIME} seconds...")
-        time.sleep(VPN_SETUP_WAIT_TIME) # Give VPN time to establish
-
-        # --- Test API Connectivity and Data Retrieval ---
-        api_data = "N/A"
+def take_screenshot(driver, filename_suffix, file_handle):
+    """Takes a screenshot and saves it to the troubleshooting directory."""
+    if driver:
+        screenshot_name = f"dnb_page_{filename_suffix}_{datetime.now().strftime('%H%M%S')}.png"
+        screenshot_path = os.path.join(SCREENSHOT_DIR, screenshot_name)
         try:
-            response = requests.get(api_url, timeout=15) # 15-second timeout for the request
-            response.raise_for_status() # Raise an exception for bad status codes (4xx or 5xx)
-            
-            json_response = response.json()
-            
-            if isinstance(json_key_or_keys, list):
-                extracted_data = {}
-                for key in json_key_or_keys:
-                    if key in json_response:
-                        extracted_data[key] = json_response[key]
-                    else:
-                        extracted_data[key] = "Key Not Found"
-                api_data = json.dumps(extracted_data)
-            elif json_key_or_keys and json_key_or_keys in json_response:
-                api_data = json_response[json_key_or_keys]
-            else:
-                api_data = json.dumps(json_response) # Fallback to full JSON if no specific key or key not found
-
-            status = "API_SUCCESS"
-            detail = f"API Data: {api_data}"
-
-        except requests.exceptions.RequestException as e:
-            status = "API_REQUEST_FAILED"
-            detail = f"Error during API request: {e}"
-        except json.JSONDecodeError as e:
-            status = "API_JSON_PARSE_FAILED"
-            detail = f"Error parsing JSON response: {e}. Raw response: {response.text[:200]}..." # Show snippet
+            driver.save_screenshot(screenshot_path)
+            log_message(f"Screenshot saved: {screenshot_path}", file_handle)
         except Exception as e:
-            status = "API_UNEXPECTED_ERROR"
-            detail = f"Unexpected Error during API call: {e}"
+            log_message(f"Error taking screenshot {screenshot_name}: {e}", file_handle)
 
-        print(f"  {status}: {detail}\n")
-        results.append(f"  Status: {status}")
-        results.append(f"  Detail: {detail}\n")
+def troubleshoot_dnb_scraper():
+    """Attempts to scrape a D&B page and provides detailed troubleshooting."""
+    driver = None
+    with open(RESULTS_FILE, 'w') as f_results:
+        log_message("--- Starting DNB Scraper Troubleshooting ---", f_results)
+        log_message(f"Target URL: {TARGET_URL}", f_results)
 
-        # --- Bring down WireGuard Tunnel ---
-        print(f"Attempting to bring down WireGuard tunnel for '{config_file}'...")
-        down_command = ['sudo', 'wg-quick', 'down', config_path]
-        down_process = subprocess.run(down_command, capture_output=True, text=True, check=False)
+        # --- Initialize Browser ---
+        log_message("\nAttempting to initialize SeleniumBase Driver...", f_results)
+        try:
+            driver = Driver(browser="chrome", headless=True) # Use "chrome" for Chromium
+            driver.set_page_load_timeout(60) # Set page load timeout to 60 seconds
+            log_message("Selenium WebDriver initialized successfully in headless mode!", f_results)
 
-        if down_process.returncode != 0:
-            down_status = "VPN_DOWN_FAILED"
-            down_detail = f"Error bringing down VPN: {down_process.stderr.strip()}"
-            print(f"  {down_status}: {down_detail}\n")
-            results.append(f"  Down Status: {down_status}")
-            results.append(f"  Down Detail: {down_detail}\n")
-        else:
-            print(f"  VPN tunnel for '{config_file}' brought down successfully.\n")
-            results.append(f"  Down Status: VPN_DOWN_SUCCESS\n")
+            # --- Navigate to Target URL ---
+            log_message(f"\nNavigating to {TARGET_URL}...", f_results)
+            driver.get(TARGET_URL)
+            log_message(f"Successfully navigated to {TARGET_URL}. Current URL: {driver.current_url}", f_results)
+            log_message(f"Page Title: {driver.title}", f_results)
 
-    # Write results to the output file
-    try:
-        with open(RESULTS_FILE, 'w') as f: # 'w' mode will overwrite the file
-            for line in results:
-                f.write(line + "\n")
-        print(f"All tests completed. Results saved to '{RESULTS_FILE}'.")
-    except IOError as e:
-        print(f"Error saving results to file: {e}")
+            # --- Take Screenshot after load ---
+            take_screenshot(driver, "after_load", f_results)
+
+            # --- Check for a known element to confirm content is loading ---
+            # This is a generic check for body content, can be made more specific if a common element is known.
+            body_text = driver.find_element(By.TAG_NAME, "body").text
+            if len(body_text) > 100: # Check if there's substantial text content
+                log_message(f"Body contains substantial text content (first 100 chars): {body_text[:100]}...", f_results)
+            else:
+                log_message(f"Body contains very little text content (length: {len(body_text)}). This might indicate a loading issue.", f_results)
+
+            # --- Attempt to Scrape Type 2 Links ---
+            log_message("\nAttempting to scrape for Type 2 links...", f_results)
+            content = driver.page_source
+            soup = BeautifulSoup(content, 'html.parser')
+            
+            # The selector for company profile links
+            company_links = soup.find_all('a', href=lambda x: x and '/business-directory/company-profiles.' in x)
+            
+            log_message(f"Found {len(company_links)} Type 2 links.", f_results)
+
+            if not company_links:
+                log_message("No Type 2 links found. Logging full page source for analysis:", f_results)
+                f_results.write("\n--- Full Page Source ---\n")
+                f_results.write(content)
+                f_results.write("\n--- End Full Page Source ---\n")
+            else:
+                log_message("Type 2 links found. Listing first 5 (if any):", f_results)
+                for i, link in enumerate(company_links[:5]):
+                    log_message(f"  Link {i+1}: {link.get('href')}", f_results)
+            
+            log_message("\nScraping attempt complete.", f_results)
+            f_results.write("Overall Status: SUCCESS (Browser launched, page loaded, scraping attempted)\n")
+
+        except TimeoutException:
+            log_message(f"TimeoutException during navigation to {TARGET_URL}.", f_results)
+            f_results.write("Overall Status: FAILED - TimeoutException\n")
+        except SessionNotCreatedException as e:
+            log_message(f"SessionNotCreatedException during WebDriver initialization: {e}", f_results)
+            log_message("Possible causes: Browser not installed correctly, incompatible WebDriver, or display issues.", f_results)
+            f_results.write("Overall Status: FAILED - SessionNotCreatedException\n")
+        except WebDriverException as e:
+            log_message(f"WebDriverException during browser operation: {e}", f_results)
+            log_message("This is a general WebDriver error. Check the full traceback for more details.", f_results)
+            f_results.write("Overall Status: FAILED - WebDriverException\n")
+        except Exception as e:
+            log_message(f"An unexpected error occurred: {e}", f_results)
+            log_message("Please review the full traceback for more information.", f_results)
+            f_results.write("Overall Status: FAILED - Unexpected Error\n")
+        finally:
+            if driver:
+                log_message("Quitting Selenium WebDriver...", f_results)
+                driver.quit()
+                log_message("WebDriver quit successfully.", f_results)
+            else:
+                log_message("WebDriver was not initialized, no need to quit.", f_results)
+
+        log_message("\n--- DNB Scraper Troubleshooting Complete ---", f_results)
 
 if __name__ == "__main__":
-    run_connectivity_test()
+    troubleshoot_dnb_scraper()
