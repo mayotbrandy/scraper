@@ -1,12 +1,15 @@
 import os
 import time
 import subprocess
+import random
 from datetime import datetime
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from bs4 import BeautifulSoup
 
 # --- Configuration ---
 TARGET_DNB_URL = "https://www.dnb.com/business-directory/company-information.oil_and_gas_extraction.ca.html?page=3"
 PUBLIC_TEST_URL = "https://www.wikipedia.org" # A general public website to test basic connectivity
+IP_CHECK_URL = "https://ifconfig.me/ip" # Website to check public IP
 RESULTS_FILE = "dnb_playwright_troubleshoot_results.txt"
 SCREENSHOT_DIR = "playwright_troubleshoot_screenshots"
 
@@ -30,6 +33,16 @@ def log_message(message, file_handle=None):
     print(full_message)
     if file_handle:
         file_handle.write(full_message + "\n")
+
+def take_screenshot(page, filename_prefix, config_file_name, file_handle):
+    """Takes a screenshot and saves it to the troubleshooting directory."""
+    screenshot_name = f"{config_file_name.replace('.conf', '')}_{filename_prefix}_{datetime.now().strftime('%H%M%S')}.png"
+    screenshot_path = os.path.join(SCREENSHOT_DIR, screenshot_name)
+    try:
+        page.screenshot(path=screenshot_path, full_page=True)
+        log_message(f"Screenshot saved: {screenshot_path}", file_handle)
+    except Exception as e:
+        log_message(f"Error taking screenshot {screenshot_name}: {e}", file_handle)
 
 def bring_up_vpn(config_file, file_handle):
     """Brings up a WireGuard VPN tunnel using wg-quick."""
@@ -60,9 +73,10 @@ def bring_down_vpn(config_file, file_handle):
 def troubleshoot_dnb_playwright():
     """Attempts to load D&B page using Playwright through VPN and logs diagnostics."""
     with open(RESULTS_FILE, 'w') as f_results:
-        log_message("--- Starting Playwright DNB Scraper Troubleshooting (Real User-like) ---", f_results)
+        log_message("--- Starting Playwright DNB Scraper Troubleshooting (Enhanced Stealth & IP Screenshots) ---", f_results)
         log_message(f"Target DNB URL: {TARGET_DNB_URL}", f_results)
         log_message(f"Public Test URL: {PUBLIC_TEST_URL}", f_results)
+        log_message(f"IP Check URL: {IP_CHECK_URL}", f_results)
         log_message(f"Testing {len(WIREGUARD_CONFIG_FILES_TO_TEST)} WireGuard configurations.", f_results)
 
         for config_file in WIREGUARD_CONFIG_FILES_TO_TEST:
@@ -76,33 +90,97 @@ def troubleshoot_dnb_playwright():
 
             try:
                 with sync_playwright() as p:
-                    # Configure browser to appear more "real user-like"
+                    # Configure browser to appear more "real user-like" and hide headless flags
                     browser = p.chromium.launch(
-                        headless=True, # Keep headless for CI, but try to hide it
+                        headless=True,
                         args=[
                             '--no-sandbox', # Required for GitHub Actions runners
                             '--disable-blink-features=AutomationControlled', # Hide automation flags
                             '--disable-dev-shm-usage', # Overcome limited resource problems
                             '--disable-gpu', # Often helpful in headless environments
-                            '--window-size=1920,1080' # Set a common screen size
+                            '--window-size=1920,1080', # Set a common screen size
+                            '--disable-extensions', # Disable browser extensions
+                            '--disable-setuid-sandbox', # Another sandbox disable for CI
+                            '--disable-web-security', # May help with some cross-origin issues
+                            '--disable-features=IsolateOrigins,site-per-process', # Reduce isolation
+                            '--no-first-run', # Don't show first run experience
+                            '--no-default-browser-check', # Don't check if it's default browser
+                            '--disable-background-networking', # Reduce noise
+                            '--disable-background-timer-throttling',
+                            '--disable-backgrounding-occluded-windows',
+                            '--disable-breakpad',
+                            '--disable-client-side-phishing-detection',
+                            '--disable-component-update',
+                            '--disable-default-apps',
+                            '--disable-hang-monitor',
+                            '--disable-ipc-flooding-protection',
+                            '--disable-notifications',
+                            '--disable-offer-store-unmasked-wallet-cards',
+                            '--disable-popup-blocking',
+                            '--disable-print-preview',
+                            '--disable-prompt-on-repost',
+                            '--disable-renderer-backgrounding',
+                            '--disable-sync',
+                            '--disable-translate',
+                            '--metrics-recording-only',
+                            '--mute-audio',
+                            '--no-sandbox',
+                            '--safebrowsing-disable-auto-update',
+                            '--enable-automation', # Keep this for Playwright to control, but it's often detected
+                            '--password-store=basic',
+                            '--use-mock-keychain'
                         ]
                     )
                     # Set a realistic user agent and viewport
                     context = browser.new_context(
                         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
                         viewport={"width": 1920, "height": 1080},
-                        bypass_csp=True # Bypass Content Security Policy if any
+                        bypass_csp=True, # Bypass Content Security Policy if any
+                        java_script_enabled=True, # Ensure JavaScript is enabled
+                        accept_downloads=False # Prevent accidental downloads
                     )
                     page = context.new_page()
                     page.set_default_timeout(60000) # Set default timeout for page operations to 60 seconds
-                    log_message("Playwright browser launched and configured for real user-like behavior.", f_results)
 
-                    # --- Get current public IP through VPN ---
-                    log_message("Checking public IP through VPN...", f_results)
+                    # Inject JavaScript to hide common automation flags
+                    # This script runs BEFORE any other scripts on the page
+                    page.add_init_script("""
+                        Object.defineProperty(navigator, 'webdriver', {
+                            get: () => undefined
+                        });
+                        Object.defineProperty(navigator, 'plugins', {
+                            get: () => [1, 2, 3, 4, 5] // Mimic common number of plugins
+                        });
+                        Object.defineProperty(navigator, 'languages', {
+                            get: () => ['en-US', 'en']
+                        });
+                        Object.defineProperty(navigator, 'mimeTypes', {
+                            get: () => [1, 2, 3, 4, 5] // Mimic common number of mimeTypes
+                        });
+                        // Override WebGL fingerprinting
+                        const getParameter = WebGLRenderingContext.prototype.getParameter;
+                        WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                            if (parameter === 37445) { // UNMASKED_VENDOR_WEBGL
+                                return 'Google Inc.';
+                            }
+                            if (parameter === 37446) { // UNMASKED_RENDERER_WEBGL
+                                return 'ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader Device (Subzero) (0x0000C0DE))';
+                            }
+                            return getParameter.apply(this, arguments);
+                        };
+                        // Hide Chrome/Playwright specific properties
+                        window.chrome = { runtime: {}, csi: {}, loadTimes: {} };
+                        window.navigator.chrome = { runtime: {}, csi: {}, loadTimes: {} };
+                    """)
+                    log_message("Playwright browser launched and configured for enhanced stealth.", f_results)
+
+                    # --- Get current public IP through VPN and take screenshot ---
+                    log_message(f"Checking public IP through VPN at {IP_CHECK_URL}...", f_results)
                     try:
-                        page.goto("https://ifconfig.me/ip", timeout=15000) # 15 seconds timeout
+                        page.goto(IP_CHECK_URL, timeout=15000) # 15 seconds timeout
                         public_ip = page.inner_text("pre").strip()
                         log_message(f"Public IP through VPN: {public_ip}", f_results)
+                        take_screenshot(page, "ip_check", config_file, f_results) # Take screenshot of IP page
                     except PlaywrightTimeoutError:
                         log_message("Timeout checking public IP. VPN might not be fully functional or DNS issue.", f_results)
                         public_ip = "IP check timed out"
@@ -116,10 +194,7 @@ def troubleshoot_dnb_playwright():
                     try:
                         page.goto(PUBLIC_TEST_URL, timeout=30000) # 30 seconds timeout
                         log_message(f"Successfully navigated to {PUBLIC_TEST_URL}. Title: {page.title()}", f_results)
-                        screenshot_name = f"{config_file.replace('.conf', '')}_public_site_{datetime.now().strftime('%H%M%S')}.png"
-                        screenshot_path = os.path.join(SCREENSHOT_DIR, screenshot_name)
-                        page.screenshot(path=screenshot_path, full_page=True)
-                        log_message(f"Screenshot of public site saved: {screenshot_path}", f_results)
+                        take_screenshot(page, "public_site", config_file, f_results) # Take screenshot of public site
                         f_results.write(f"  Public Site Test: SUCCESS - Title: {page.title()}\n")
                     except PlaywrightTimeoutError:
                         log_message(f"Timeout navigating to {PUBLIC_TEST_URL}.", f_results)
@@ -128,6 +203,10 @@ def troubleshoot_dnb_playwright():
                         log_message(f"Error navigating to {PUBLIC_TEST_URL}: {e}", f_results)
                         f_results.write(f"  Public Site Test: FAILED - Error: {e}\n")
 
+                    # --- Add a small random delay before navigating to DNB ---
+                    delay_before_dnb = random.uniform(2, 5) # Random delay between 2 and 5 seconds
+                    log_message(f"Waiting {delay_before_dnb:.2f} seconds before navigating to DNB URL...", f_results)
+                    time.sleep(delay_before_dnb)
 
                     # --- Navigate to Target DNB URL and take screenshot ---
                     log_message(f"\nNavigating to DNB Target URL: {TARGET_DNB_URL}...", f_results)
@@ -136,10 +215,7 @@ def troubleshoot_dnb_playwright():
                         log_message(f"Successfully navigated to {TARGET_DNB_URL}.", f_results)
                         log_message(f"Page Title: {page.title()}", f_results)
                         
-                        screenshot_name = f"{config_file.replace('.conf', '')}_dnb_page_loaded_{datetime.now().strftime('%H%M%S')}.png"
-                        screenshot_path = os.path.join(SCREENSHOT_DIR, screenshot_name)
-                        page.screenshot(path=screenshot_path, full_page=True)
-                        log_message(f"Screenshot of DNB page saved: {screenshot_path}", f_results)
+                        take_screenshot(page, "dnb_page_loaded", config_file, f_results) # Take screenshot of DNB page
 
                         # --- Attempt to Scrape Type 2 Links ---
                         log_message("\nAttempting to scrape for Type 2 links...", f_results)
@@ -167,19 +243,13 @@ def troubleshoot_dnb_playwright():
                     except PlaywrightTimeoutError:
                         log_message(f"Timeout navigating to {TARGET_DNB_URL}. This indicates the page did not load within the allowed time.", f_results)
                         # Take screenshot even on timeout to see partial load / error page
-                        screenshot_name = f"{config_file.replace('.conf', '')}_dnb_timeout_{datetime.now().strftime('%H%M%S')}.png"
-                        screenshot_path = os.path.join(SCREENSHOT_DIR, screenshot_name)
-                        page.screenshot(path=screenshot_path, full_page=True)
-                        log_message(f"Screenshot saved on DNB timeout: {screenshot_path}", f_results)
+                        take_screenshot(page, "dnb_timeout", config_file, f_results)
                         log_message(f"Page content on DNB timeout (first 500 chars):\n{page.content()[:500]}...", f_results)
                         f_results.write("  DNB Scraping Status: FAILED - Navigation Timeout\n")
                     except Exception as e:
                         log_message(f"An unexpected error occurred during DNB page navigation or scraping: {e}", f_results)
                         # Take screenshot on other errors too
-                        screenshot_name = f"{config_file.replace('.conf', '')}_dnb_error_{datetime.now().strftime('%H%M%S')}.png"
-                        screenshot_path = os.path.join(SCREENSHOT_DIR, screenshot_name)
-                        page.screenshot(path=screenshot_path, full_page=True)
-                        log_message(f"Screenshot saved on DNB error: {screenshot_path}", f_results)
+                        take_screenshot(page, "dnb_error", config_file, f_results)
                         log_message(f"Page content on DNB error (first 500 chars):\n{page.content()[:500]}...", f_results)
                         f_results.write(f"  DNB Scraping Status: FAILED - {type(e).__name__}\n")
                         f_results.write(f"  Error Detail: {e}\n")
