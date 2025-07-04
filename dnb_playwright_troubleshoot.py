@@ -3,12 +3,12 @@ import time
 import subprocess
 import random
 from datetime import datetime
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from seleniumbase import BaseCase
 
 # Configuration
 DNB_HOME_URL = "https://www.dnb.com/"
 TARGET_DNB_URL = "https://www.dnb.com/business-directory/company-information.oil_and_gas_extraction.ca.html?page=3"
-RESULTS_FILE = "dnb_playwright_troubleshoot_results.txt"
+RESULTS_FILE = "dnb_playwright_troubleshoot_results.txt"  # Keep name for workflow compatibility
 SCREENSHOT_DIR = "playwright_troubleshoot_screenshots"
 HTML_DUMP_DIR = "playwright_troubleshoot_html_dumps"
 WIREGUARD_CONFIG_FILES_TO_TEST = ["ch-zrh-wg-001.conf", "us-phx-wg-101.conf", "us-sjc-wg-002.conf"]
@@ -25,20 +25,20 @@ def log_message(message, file_handle=None):
         file_handle.write(f"[{timestamp}] {message}\n")
 
 # Screenshots and HTML dumps
-def take_screenshot(page, filename_prefix, config_file_name, file_handle):
+def take_screenshot(driver, filename_prefix, config_file_name, file_handle):
     screenshot_name = f"{config_file_name.replace('.conf', '')}_{filename_prefix}_{datetime.now().strftime('%H%M%S')}.png"
     screenshot_path = os.path.join(SCREENSHOT_DIR, screenshot_name)
     try:
-        page.screenshot(path=screenshot_path, full_page=True)
+        driver.save_screenshot(screenshot_path)
         log_message(f"Screenshot: {screenshot_path}", file_handle)
     except Exception as e:
         log_message(f"Screenshot error {screenshot_name}: {e}", file_handle)
 
-def dump_html_content(page, filename_prefix, config_file_name, file_handle):
+def dump_html_content(driver, filename_prefix, config_file_name, file_handle):
     html_dump_name = f"{config_file_name.replace('.conf', '')}_{filename_prefix}_{datetime.now().strftime('%H%M%S')}.html"
     html_dump_path = os.path.join(HTML_DUMP_DIR, html_dump_name)
     try:
-        content = page.content()
+        content = driver.get_page_source()
         with open(html_dump_path, 'w', encoding='utf-8') as f:
             f.write(content)
         log_message(f"HTML dumped: {html_dump_path}", file_handle)
@@ -69,87 +69,36 @@ def bring_down_vpn(config_file, file_handle):
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
         log_message(f"VPN shutdown error: {e}", file_handle)
 
-# Human-like behavior
-def simulate_human_mouse_movement(page, steps=5, delay_ms_range=(30, 100)):
-    log_message(f"Simulating mouse ({steps} steps)...")
-    try:
-        current_x, current_y = random.randint(100, 600), random.randint(100, 600)
-        page.mouse.move(current_x, current_y)
-        for _ in range(steps):
-            target_x, target_y = random.randint(50, 1200), random.randint(50, 900)
-            page.mouse.move(target_x, target_y, steps=random.randint(5, 15))
-            time.sleep(random.uniform(*delay_ms_range) / 1000)
-        if random.random() < 0.5:
-            page.mouse.click(random.randint(50, 1200), random.randint(50, 900))
-            log_message("Mouse click simulated.")
-        log_message("Mouse done.")
-    except Exception as e:
-        log_message(f"Mouse error: {e}")
+# SeleniumBase test class
+class DNBScraperTest(BaseCase):
+    def troubleshoot_dnb(self):
+        with open(RESULTS_FILE, 'w') as f_results:
+            log_message("Starting DNB Scraper Troubleshooting...", f_results)
+            log_message(f"Home URL: {DNB_HOME_URL}", f_results)
+            log_message(f"Target URL: {TARGET_DNB_URL}", f_results)
+            log_message(f"Testing {len(WIREGUARD_CONFIG_FILES_TO_TEST)} VPNs.", f_results)
 
-def simulate_human_scroll(page, scroll_attempts=3, scroll_amount_range=(200, 600), delay_range=(0.5, 2)):
-    log_message(f"Simulating scroll ({scroll_attempts} attempts)...")
-    try:
-        for _ in range(scroll_attempts):
-            scroll_amount = random.randint(*scroll_amount_range) * random.choice([1, -1])
-            page.evaluate(f"window.scrollBy(0, {scroll_amount});")
-            time.sleep(random.uniform(*delay_range))
-        log_message("Scroll done.")
-    except Exception as e:
-        log_message(f"Scroll error: {e}")
+            for config_file in WIREGUARD_CONFIG_FILES_TO_TEST:
+                log_message(f"\nTesting VPN: {config_file}", f_results)
+                f_results.write(f"\n--- VPN: {config_file} ---\n")
+                
+                if not bring_up_vpn(config_file, f_results):
+                    log_message(f"Skipping {config_file}.", f_results)
+                    f_results.write("  VPN Failed.\n")
+                    continue
 
-def simulate_background_activity(page):
-    log_message("Simulating background activity...")
-    try:
-        new_page = page.context.new_page()
-        new_page.goto("https://www.example.com", timeout=15000)
-        time.sleep(random.uniform(1, 3))
-        new_page.close()
-        log_message("Background activity done.")
-    except Exception as e:
-        log_message(f"Background error: {e}")
+                try:
+                    # Setup browser with stealth
+                    user_agents = [
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0",
+                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6; rv:128.0) Gecko/20100101 Firefox/128.0",
+                        "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
+                    ]
+                    self.set_user_agent(random.choice(user_agents))
+                    self.driver.set_window_size(random.randint(1280, 1920), random.randint(720, 1080))
 
-# Main function
-def troubleshoot_dnb_playwright():
-    with open(RESULTS_FILE, 'w') as f_results:
-        log_message("Starting DNB Scraper Troubleshooting...", f_results)
-        log_message(f"Home URL: {DNB_HOME_URL}", f_results)
-        log_message(f"Target URL: {TARGET_DNB_URL}", f_results)
-        log_message(f"Testing {len(WIREGUARD_CONFIG_FILES_TO_TEST)} VPNs.", f_results)
-
-        for config_file in WIREGUARD_CONFIG_FILES_TO_TEST:
-            log_message(f"\nTesting VPN: {config_file}", f_results)
-            f_results.write(f"\n--- VPN: {config_file} ---\n")
-            
-            if not bring_up_vpn(config_file, f_results):
-                log_message(f"Skipping {config_file}.", f_results)
-                f_results.write("  VPN Failed.\n")
-                continue
-
-            try:
-                with sync_playwright() as p:
-                    context_dir = f"playwright_context_{config_file.replace('.conf', '')}"
-                    browser = p.firefox.launch_persistent_context(
-                        user_data_dir=context_dir,
-                        headless=True,
-                        user_agent=random.choice([
-                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0",
-                            "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6; rv:128.0) Gecko/20100101 Firefox/128.0",
-                            "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
-                        ]),
-                        viewport={"width": random.randint(1280, 1920), "height": random.randint(720, 1080)},
-                        bypass_csp=True,
-                        java_script_enabled=True,
-                        accept_downloads=False,
-                        locale=random.choice(["en-US,en;q=0.9", "en-GB,en;q=0.8", "fr-FR,fr;q=0.9"]),
-                        screen={"width": random.randint(1280, 1920), "height": random.randint(720, 1080)},
-                        has_touch=False,
-                        is_mobile=False,
-                        device_scale_factor=1.0,
-                    )
-                    context = browser
-                    context.set_default_timeout(30000)
-
-                    context.add_init_script("""
+                    # Stealth script to mimic human browser
+                    self.execute_script("""
                         Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
                         Object.defineProperty(window, 'chrome', { get: () => undefined });
                         Object.defineProperty(navigator, 'plugins', {
@@ -159,7 +108,8 @@ def troubleshoot_dnb_playwright():
                             ],
                         });
                         Object.defineProperty(navigator, 'mimeTypes', {
-                            get: () => [{ type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format', enabledPlugin: navigator.plugins[0] }], });
+                            get: () => [{ type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format', enabledPlugin: navigator.plugins[0] }],
+                        });
                         Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
                         Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => [4, 8, 12][Math.floor(Math.random() * 3)] });
                         Object.defineProperty(navigator, 'deviceMemory', { get: () => [4, 8, 16][Math.floor(Math.random() * 3)] });
@@ -212,86 +162,99 @@ def troubleshoot_dnb_playwright():
                         });
                     """)
 
-                    context.set_extra_http_headers({
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                        'Accept-Encoding': 'gzip, deflate, br',
-                        'Connection': 'keep-alive',
-                        'Upgrade-Insecure-Requests': '1',
-                        'Sec-Fetch-Dest': 'document',
-                        'Sec-Fetch-Mode': 'navigate',
-                        'Sec-Fetch-Site': 'none',
-                        'Sec-Fetch-User': '?1',
-                        'Referer': 'https://www.google.com/',
-                    })
-
-                    page = context.new_page()
-                    log_message("Browser launched.", f_results)
-
                     # Navigate to DNB Home
                     delay = random.uniform(5, 10)
                     log_message(f"Waiting {delay:.2f}s for home URL...", f_results)
                     time.sleep(delay)
-                    simulate_human_mouse_movement(page)
-                    simulate_human_scroll(page)
+
+                    # Simulate human-like behavior
+                    try:
+                        steps, delay_ms_range = 5, (30, 100)
+                        log_message(f"Simulating mouse ({steps} steps)...", f_results)
+                        for _ in range(steps):
+                            self.js_click_at(random.randint(50, 1200), random.randint(50, 900))
+                            time.sleep(random.uniform(*delay_ms_range) / 1000)
+                        log_message("Mouse done.", f_results)
+
+                        scroll_attempts, scroll_amount_range, scroll_delay_range = 3, (200, 600), (0.5, 2)
+                        log_message(f"Simulating scroll ({scroll_attempts} attempts)...", f_results)
+                        for _ in range(scroll_attempts):
+                            scroll_amount = random.randint(*scroll_amount_range) * random.choice([1, -1])
+                            self.execute_script(f"window.scrollBy(0, {scroll_amount});")
+                            time.sleep(random.uniform(*scroll_delay_range))
+                        log_message("Scroll done.", f_results)
+                    except Exception as e:
+                        log_message(f"Behavior simulation error: {e}", f_results)
 
                     log_message(f"Navigating to {DNB_HOME_URL}...", f_results)
                     try:
-                        page.goto(DNB_HOME_URL, timeout=30000, wait_until='domcontentloaded')
-                        log_message(f"Navigated to {DNB_HOME_URL}. Title: {page.title()}", f_results)
-                        dump_html_content(page, "dnb_home_page_content", config_file, f_results)
-                        if page.query_selector('iframe[src*="recaptcha"],div#cf-wrapper,div[data-hcaptcha-widget-id],h1:contains("Access Denied")'):
+                        self.open(DNB_HOME_URL)
+                        self.wait_for_ready_state_complete(timeout=30)
+                        title = self.get_page_title()
+                        log_message(f"Navigated to {DNB_HOME_URL}. Title: {title}", f_results)
+                        dump_html_content(self.driver, "dnb_home_page_content", config_file, f_results)
+                        block_detected = self.is_element_present('iframe[src*="recaptcha"], #cf-wrapper, [data-hcaptcha-widget-id], h1:contains("Access Denied")')
+                        if block_detected:
                             log_message("Block detected on home page!", f_results)
-                            take_screenshot(page, "dnb_home_block_detected", config_file, f_results)
-                        f_results.write(f"  Home Page: SUCCESS{' (Block Detected)' if page.query_selector('iframe[src*="recaptcha"],div#cf-wrapper,div[data-hcaptcha-widget-id],h1:contains(\"Access Denied\")') else ''}\n")
-                    except PlaywrightTimeoutError:
-                        log_message(f"Timeout on {DNB_HOME_URL}.", f_results)
-                        take_screenshot(page, "dnb_home_timeout", config_file, f_results)
-                        dump_html_content(page, "dnb_home_timeout_content", config_file, f_results)
-                        f_results.write("  Home Page: FAILED - Timeout\n")
+                            take_screenshot(self.driver, "dnb_home_block_detected", config_file, f_results)
+                        f_results.write(f"  Home Page: SUCCESS{' (Block Detected)' if block_detected else ''}\n")
                     except Exception as e:
                         log_message(f"Error on {DNB_HOME_URL}: {e}", f_results)
-                        take_screenshot(page, "dnb_home_error", config_file, f_results)
-                        dump_html_content(page, "dnb_home_error_content", config_file, f_results)
+                        take_screenshot(self.driver, "dnb_home_error", config_file, f_results)
+                        dump_html_content(self.driver, "dnb_home_error_content", config_file, f_results)
                         f_results.write(f"  Home Page: FAILED - {type(e).__name__}\n")
 
                     # Navigate to Target URL
                     delay = random.uniform(3, 7)
                     log_message(f"Waiting {delay:.2f}s for target URL...", f_results)
                     time.sleep(delay)
-                    simulate_human_mouse_movement(page)
-                    simulate_human_scroll(page)
+
+                    try:
+                        log_message(f"Simulating mouse ({steps} steps)...", f_results)
+                        for _ in range(steps):
+                            self.js_click_at(random.randint(50, 1200), random.randint(50, 900))
+                            time.sleep(random.uniform(*delay_ms_range) / 1000)
+                        log_message("Mouse done.", f_results)
+
+                        log_message(f"Simulating scroll ({scroll_attempts} attempts)...", f_results)
+                        for _ in range(scroll_attempts):
+                            scroll_amount = random.randint(*scroll_amount_range) * random.choice([1, -1])
+                            self.execute_script(f"window.scrollBy(0, {scroll_amount});")
+                            time.sleep(random.uniform(*scroll_delay_range))
+                        log_message("Scroll done.", f_results)
+                    except Exception as e:
+                        log_message(f"Behavior simulation error: {e}", f_results)
 
                     log_message(f"Navigating to {TARGET_DNB_URL}...", f_results)
                     try:
-                        page.goto(TARGET_DNB_URL, timeout=30000, wait_until='domcontentloaded')
-                        log_message(f"Navigated to {TARGET_DNB_URL}. Title: {page.title()}", f_results)
-                        take_screenshot(page, "dnb_target_page_loaded", config_file, f_results)
-                        dump_html_content(page, "dnb_target_page_content", config_file, f_results)
-                        if page.query_selector('iframe[src*="recaptcha"],div#cf-wrapper,div[data-hcaptcha-widget-id],h1:contains("Access Denied")'):
+                        self.open(TARGET_DNB_URL)
+                        self.wait_for_ready_state_complete(timeout=30)
+                        title = self.get_page_title()
+                        log_message(f"Navigated to {TARGET_DNB_URL}. Title: {title}", f_results)
+                        take_screenshot(self.driver, "dnb_target_page_loaded", config_file, f_results)
+                        dump_html_content(self.driver, "dnb_target_page_content", config_file, f_results)
+                        block_detected = self.is_element_present('iframe[src*="recaptcha"], #cf-wrapper, [data-hcaptcha-widget-id], h1:contains("Access Denied")')
+                        if block_detected:
                             log_message("Block detected on target page!", f_results)
-                            take_screenshot(page, "dnb_target_block_detected", config_file, f_results)
-                        f_results.write(f"  Target Page: SUCCESS{' (Block Detected)' if page.query_selector('iframe[src*="recaptcha"],div#cf-wrapper,div[data-hcaptcha-widget-id],h1:contains(\"Access Denied\")') else ''}\n")
-                    except PlaywrightTimeoutError:
-                        log_message(f"Timeout on {TARGET_DNB_URL}.", f_results)
-                        take_screenshot(page, "dnb_target_timeout", config_file, f_results)
-                        dump_html_content(page, "dnb_target_timeout_content", config_file, f_results)
-                        f_results.write("  Target Page: FAILED - Timeout\n")
+                            take_screenshot(self.driver, "dnb_target_block_detected", config_file, f_results)
+                        f_results.write(f"  Target Page: SUCCESS{' (Block Detected)' if block_detected else ''}\n")
                     except Exception as e:
                         log_message(f"Error on {TARGET_DNB_URL}: {e}", f_results)
-                        take_screenshot(page, "dnb_target_error", config_file, f_results)
-                        dump_html_content(page, "dnb_target_error_content", config_file, f_results)
+                        take_screenshot(self.driver, "dnb_target_error", config_file, f_results)
+                        dump_html_content(self.driver, "dnb_target_error_content", config_file, f_results)
                         f_results.write(f"  Target Page: FAILED - {type(e).__name__}\n")
 
-                    context.close()
+                    self.driver.quit()
                     log_message("Browser closed.", f_results)
 
-            except Exception as e:
-                log_message(f"Browser error: {e}", f_results)
-                f_results.write(f"  Status: FAILED - Browser Error\n")
-            finally:
-                bring_down_vpn(config_file, f_results)
+                except Exception as e:
+                    log_message(f"Browser error: {e}", f_results)
+                    f_results.write(f"  Status: FAILED - Browser Error\n")
+                finally:
+                    bring_down_vpn(config_file, f_results)
 
-        log_message("Troubleshooting Done.", f_results)
+            log_message("Troubleshooting Done.", f_results)
 
+# Run the test
 if __name__ == "__main__":
-    troubleshoot_dnb_playwright()
+    DNBScraperTest().troubleshoot_dnb()
