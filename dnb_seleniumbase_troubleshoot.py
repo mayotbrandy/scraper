@@ -1,9 +1,11 @@
+```python
 import os
 import time
 import subprocess
 import random
 from datetime import datetime
 from seleniumbase import BaseCase
+from selenium.webdriver.firefox.options import Options
 
 # Configuration
 DNB_HOME_URL = "https://www.dnb.com/"
@@ -94,8 +96,14 @@ class DNBScraperTest(BaseCase):
                         "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6; rv:128.0) Gecko/20100101 Firefox/128.0",
                         "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
                     ]
-                    self.set_user_agent(random.choice(user_agents))
-                    self.driver.set_window_size(random.randint(1280, 1920), random.randint(720, 1080))
+                    firefox_options = Options()
+                    firefox_options.add_argument(f"--user-agent={random.choice(user_agents)}")
+                    firefox_options.add_argument(f"--width={random.randint(1280, 1920)}")
+                    firefox_options.add_argument(f"--height={random.randint(720, 1080)}")
+                    self.set_browser_options(firefox_options)
+
+                    # Launch browser
+                    self.setUp(browser="firefox")
 
                     # Stealth script to mimic human browser
                     self.execute_script("""
@@ -244,7 +252,7 @@ class DNBScraperTest(BaseCase):
                         dump_html_content(self.driver, "dnb_target_error_content", config_file, f_results)
                         f_results.write(f"  Target Page: FAILED - {type(e).__name__}\n")
 
-                    self.driver.quit()
+                    self.tearDown()
                     log_message("Browser closed.", f_results)
 
                 except Exception as e:
@@ -258,3 +266,4 @@ class DNBScraperTest(BaseCase):
 # Run the test
 if __name__ == "__main__":
     DNBScraperTest().troubleshoot_dnb()
+```
