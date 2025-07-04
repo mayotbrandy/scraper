@@ -1,4 +1,3 @@
-```python
 import os
 import time
 import subprocess
@@ -266,4 +265,3 @@ class DNBScraperTest(BaseCase):
 # Run the test
 if __name__ == "__main__":
     DNBScraperTest().troubleshoot_dnb()
-```
