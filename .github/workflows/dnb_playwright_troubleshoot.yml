@@ -1,12 +1,11 @@
-name: Playwright DNB Scraper Troubleshooting (Finalized - Firefox)
+name: SeleniumBase DNB Scraper Troubleshooting
 
 on:
-  # Allows you to run this workflow manually from the Actions tab in GitHub
   workflow_dispatch:
 
 jobs:
   troubleshoot-scraper:
-    runs-on: ubuntu-latest # GitHub-hosted runner with Ubuntu
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
@@ -20,20 +19,24 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x' # Use the latest Python 3 version available
+          python-version: '3.x'
 
       - name: Install Python dependencies
         run: |
-          pip install playwright beautifulsoup4 requests
+          pip install seleniumbase beautifulsoup4 requests
 
-      - name: Install Playwright browsers
-        # This step is crucial for Playwright to have the browser binaries
+      - name: Install Firefox and Geckodriver
         run: |
-          playwright install firefox
+          sudo apt-get update
+          sudo apt-get install -y firefox
+          wget https://github.com/mozilla/geckodriver/releases/download/v0.34.0/geckodriver-v0.34.0-linux64.tar.gz
+          tar -xvzf geckodriver-v0.34.0-linux64.tar.gz
+          sudo mv geckodriver /usr/local/bin/
+          sudo chmod +x /usr/local/bin/geckodriver
 
       - name: Run DNB Scraper Troubleshooting Script
         run: |
-          python dnb_playwright_troubleshoot.py
+          python dnb_seleniumbase_troubleshoot.py
 
       - name: Upload Troubleshooting Results
         uses: actions/upload-artifact@v4
